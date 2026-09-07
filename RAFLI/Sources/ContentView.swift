@@ -2,19 +2,18 @@ import SwiftUI
 import UniformTypeIdentifiers
 import UIKit
 import AVFoundation
-import AVKit
 import PhotosUI
 
 struct ContentView: View {
     @AppStorage("rafli_language") private var language = "ar"
     @AppStorage("rafli_theme") private var theme = "dark"
-    @AppStorage("rafli_access") private var accessGranted = false
+    @AppStorage("rafli_access_v11") private var accessGranted = false
 
-    @State private var accessCode = ""
-    @State private var loginMessage = ""
+    @State private var code = ""
+    @State private var loginError = ""
     @State private var tab = 0
-    @State private var libraryFilter = 0
-    @State private var showFilePicker = false
+    @State private var filter = 0
+    @State private var showFiles = false
     @State private var photoItem: PhotosPickerItem?
     @State private var sourceURL: URL?
     @State private var outputURL: URL?
@@ -24,8 +23,7 @@ struct ContentView: View {
     @State private var progress = 0.0
     @State private var status = ""
     @State private var shareItem: ShareItem?
-    @State private var pulse = false
-    @State private var drift = false
+    @State private var glow = false
     @StateObject private var uploader = RAFLIUploadEngine()
 
     private var isArabic: Bool { language == "ar" }
@@ -33,38 +31,49 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
-            animatedBackground
-
-            if accessGranted {
-                appShell
-                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
-            } else {
-                loginScreen
-                    .transition(.opacity.combined(with: .scale(scale: 1.02)))
-            }
+            background
+            if accessGranted { shell } else { login }
         }
         .preferredColorScheme(isLight ? .light : .dark)
         .environment(\.layoutDirection, isArabic ? .rightToLeft : .leftToRight)
-        .fileImporter(isPresented: $showFilePicker, allowedContentTypes: [.movie], allowsMultipleSelection: false) { result in
-            if case let .success(urls) = result, let url = urls.first {
-                loadFileVideo(url)
-            }
+        .fileImporter(isPresented: $showFiles, allowedContentTypes: [.movie], allowsMultipleSelection: false) { result in
+            if case let .success(urls) = result, let url = urls.first { loadFile(url) }
         }
-        .sheet(item: $shareItem) { item in
-            ShareSheet(items: [item.url])
+        .onChange(of: photoItem) { item in
+            if let item { loadPhoto(item) }
         }
-        .onChange(of: photoItem) { newItem in
-            guard let newItem else { return }
-            loadPhotoVideo(newItem)
-        }
+        .sheet(item: $shareItem) { item in ShareSheet(items: [item.url]) }
         .onAppear {
-            status = text("اختر فيديو من الصور أو الملفات", "Choose a video from Photos or Files")
-            withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) { pulse = true }
-            withAnimation(.linear(duration: 8.0).repeatForever(autoreverses: true)) { drift = true }
+            status = t("اختر فيديو من الصور أو الملفات", "Choose a video from Photos or Files")
+            withAnimation(.easeInOut(duration: 2.6).repeatForever(autoreverses: true)) { glow = true }
         }
     }
 
-    private var appShell: some View {
+    private var background: some View {
+        ZStack {
+            LinearGradient(
+                colors: isLight
+                    ? [Color(red: 0.95, green: 0.98, blue: 0.97), .white]
+                    : [Color.black, Color(red: 0.0, green: 0.055, blue: 0.045), Color(red: 0.0, green: 0.018, blue: 0.02)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ).ignoresSafeArea()
+
+            Circle()
+                .fill(Color.mint.opacity(isLight ? 0.14 : 0.10))
+                .frame(width: 260, height: 260)
+                .blur(radius: 90)
+                .offset(x: glow ? 120 : 60, y: -250)
+
+            Circle()
+                .fill(Color.green.opacity(isLight ? 0.09 : 0.06))
+                .frame(width: 240, height: 240)
+                .blur(radius: 100)
+                .offset(x: -130, y: glow ? 300 : 220)
+        }
+    }
+
+    private var shell: some View {
         VStack(spacing: 0) {
             Group {
                 switch tab {
@@ -74,594 +83,479 @@ struct ContentView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-
             bottomBar
         }
     }
 
-    private var animatedBackground: some View {
-        ZStack {
-            LinearGradient(
-                colors: isLight
-                    ? [Color.white, Color(red: 0.88, green: 0.98, blue: 0.95), Color(red: 0.80, green: 0.92, blue: 0.90)]
-                    : [Color.black, Color(red: 0.0, green: 0.07, blue: 0.055), Color(red: 0.0, green: 0.02, blue: 0.03)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
+    private var login: some View {
+        VStack(spacing: 22) {
+            Spacer()
 
-            Circle()
-                .fill(Color.mint.opacity(isLight ? 0.22 : 0.14))
-                .frame(width: 360, height: 360)
-                .blur(radius: 95)
-                .offset(x: drift ? 190 : 70, y: drift ? -280 : -380)
+            Image("RAFLILogo")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 104, height: 104)
+                .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+                .shadow(color: .mint.opacity(glow ? 0.38 : 0.16), radius: glow ? 26 : 10)
 
-            Circle()
-                .fill(Color.green.opacity(isLight ? 0.13 : 0.08))
-                .frame(width: 320, height: 320)
-                .blur(radius: 110)
-                .offset(x: drift ? -170 : -60, y: drift ? 360 : 220)
-
-            RoundedRectangle(cornerRadius: 160)
-                .stroke(Color.mint.opacity(isLight ? 0.10 : 0.07), lineWidth: 1)
-                .frame(width: 520, height: 240)
-                .rotationEffect(.degrees(drift ? 18 : -8))
-                .blur(radius: 1)
-                .offset(y: -70)
-        }
-    }
-
-    private var loginScreen: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(spacing: 24) {
-                Spacer(minLength: 80)
-
-                RAFLILogoView(pulse: pulse)
-                    .frame(width: 132, height: 132)
-
-                VStack(spacing: 5) {
-                    Text("RAFLI")
-                        .font(.system(size: 34, weight: .black, design: .rounded))
-                    Text("Higher Quality. Always.")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.mint)
-                }
-
-                VStack(spacing: 16) {
-                    Image(systemName: "lock.shield.fill")
-                        .font(.system(size: 28, weight: .bold))
-                        .foregroundStyle(.mint)
-
-                    Text(text("أدخل كود الدخول", "Enter Access Code"))
-                        .font(.title3.bold())
-
-                    SecureField(text("الكود", "Code"), text: $accessCode)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .padding(.horizontal, 16)
-                        .frame(height: 54)
-                        .background(.thinMaterial)
-                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.mint.opacity(0.28)))
-
-                    if !loginMessage.isEmpty {
-                        Text(loginMessage)
-                            .font(.footnote.bold())
-                            .foregroundStyle(.red)
-                    }
-
-                    Button {
-                        authenticate()
-                    } label: {
-                        Label(text("دخول", "Enter"), systemImage: "arrow.right.circle.fill")
-                    }
-                    .buttonStyle(RAFLIPrimaryButton())
-                }
-                .glassCard(strong: true)
-
-                Text(text("التطبيق مجاني بالكامل", "100% free app"))
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-
-                Spacer(minLength: 50)
+            VStack(spacing: 4) {
+                Text("RAFLI").font(.system(size: 30, weight: .bold, design: .rounded))
+                Text("Higher Quality. Always.")
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(.mint)
             }
-            .padding(.horizontal, 20)
+
+            VStack(spacing: 13) {
+                HStack {
+                    Image(systemName: "lock.fill").foregroundStyle(.mint)
+                    Text(t("رمز الدخول", "Access Code")).font(.headline)
+                    Spacer()
+                }
+
+                SecureField(t("أدخل 1v", "Enter 1v"), text: $code)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .submitLabel(.go)
+                    .onSubmit { authenticate() }
+                    .padding(.horizontal, 16)
+                    .frame(height: 50)
+                    .background(.thinMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 15))
+                    .overlay(RoundedRectangle(cornerRadius: 15).stroke(Color.mint.opacity(0.25)))
+
+                if !loginError.isEmpty {
+                    Text(loginError).font(.caption.bold()).foregroundStyle(.red)
+                }
+
+                Button(action: authenticate) {
+                    HStack {
+                        Text(t("دخول", "Enter")).fontWeight(.bold)
+                        Spacer()
+                        Image(systemName: "arrow.right")
+                    }
+                }
+                .buttonStyle(RAFLIPrimaryButton())
+            }
+            .padding(18)
+            .glassCard()
+            .padding(.horizontal, 24)
+
+            Text(t("الكود الصحيح فقط يفتح التطبيق", "Only the correct code unlocks the app"))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+
+            Spacer()
         }
     }
 
     private var homePage: some View {
         ScrollView(showsIndicators: false) {
-            VStack(spacing: 16) {
-                homeHeader
+            VStack(spacing: 14) {
+                compactHeader
                 importCard
 
                 if let sourceURL {
-                    sourcePreview(url: sourceURL)
-                    qualityStats
-                    presetCard
-                    encodeCard
+                    previewCard(url: sourceURL)
+                    statsGrid
+                    modeCard
+                    processCard
                 }
 
                 if let sourceURL, let outputURL {
-                    comparisonCard(original: sourceURL, enhanced: outputURL)
-                    publishCard(url: outputURL)
+                    compareCard(original: sourceURL, enhanced: outputURL)
+                    resultActions(url: outputURL)
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
-            .padding(.bottom, 30)
+            .padding(.horizontal, 14)
+            .padding(.top, 8)
+            .padding(.bottom, 22)
         }
     }
 
-    private var homeHeader: some View {
-        HStack(spacing: 14) {
-            RAFLILogoView(pulse: pulse)
-                .frame(width: 62, height: 62)
-
-            VStack(alignment: isArabic ? .trailing : .leading, spacing: 2) {
-                Text("RAFLI")
-                    .font(.system(size: 27, weight: .black, design: .rounded))
-                Text("Higher Quality. Always.")
-                    .font(.caption)
-                    .foregroundStyle(.mint)
+    private var compactHeader: some View {
+        HStack(spacing: 10) {
+            Image("RAFLILogo")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 46, height: 46)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+            VStack(alignment: isArabic ? .trailing : .leading, spacing: 1) {
+                Text("RAFLI").font(.title3.bold())
+                Text("Higher Quality. Always.").font(.caption2).foregroundStyle(.mint)
             }
             Spacer()
+            Button { tab = 2 } label: {
+                Image(systemName: "person.crop.circle.fill")
+                    .font(.title2)
+                    .foregroundStyle(.mint)
+            }.buttonStyle(.plain)
         }
     }
 
     private var importCard: some View {
-        VStack(spacing: 18) {
-            ZStack {
-                Circle()
-                    .fill(Color.mint.opacity(pulse ? 0.25 : 0.10))
-                    .frame(width: 112, height: 112)
-                    .blur(radius: pulse ? 16 : 5)
-                Circle()
-                    .fill(LinearGradient(colors: [Color.mint.opacity(0.95), Color.green.opacity(0.45)], startPoint: .top, endPoint: .bottom))
-                    .frame(width: 82, height: 82)
-                    .overlay(Circle().stroke(Color.white.opacity(0.30)))
-                Image(systemName: "plus")
-                    .font(.system(size: 34, weight: .black))
-                    .foregroundStyle(.white)
-            }
-            .scaleEffect(pulse ? 1.04 : 0.97)
+        VStack(spacing: 14) {
+            Image(systemName: "plus")
+                .font(.system(size: 28, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 62, height: 62)
+                .background(LinearGradient(colors: [.mint, .green.opacity(0.65)], startPoint: .top, endPoint: .bottom))
+                .clipShape(Circle())
+                .shadow(color: .mint.opacity(0.22), radius: 14)
 
-            VStack(spacing: 4) {
-                Text(text("اختر فيديو", "Choose Video"))
-                    .font(.title3.bold())
-                Text(text("من الصور أو الملفات — من أي مزود ملفات متاح", "From Photos or Files — including available file providers"))
-                    .font(.footnote)
+            VStack(spacing: 3) {
+                Text(t("اختر فيديو", "Choose Video")).font(.headline.bold())
+                Text(t("من الصور أو الملفات", "From Photos or Files"))
+                    .font(.caption)
                     .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
             }
 
-            HStack(spacing: 12) {
+            HStack(spacing: 10) {
                 PhotosPicker(selection: $photoItem, matching: .videos) {
-                    importSourceButton(title: text("الصور", "Photos"), icon: "photo.on.rectangle.angled", tint: .pink)
+                    sourceButton(t("الصور", "Photos"), icon: "photo.on.rectangle", tint: .pink)
                 }
                 .buttonStyle(.plain)
 
-                Button {
-                    showFilePicker = true
-                } label: {
-                    importSourceButton(title: text("الملفات", "Files"), icon: "folder.fill", tint: .mint)
+                Button { showFiles = true } label: {
+                    sourceButton(t("الملفات", "Files"), icon: "folder.fill", tint: .mint)
                 }
                 .buttonStyle(.plain)
             }
-
-            HStack(spacing: 9) {
-                featureChip("4K", "4k.tv")
-                featureChip("60 FPS", "waveform")
-                featureChip(text("مجاني", "FREE"), "infinity")
-            }
         }
-        .padding(.vertical, 22)
-        .glassCard(strong: true)
-    }
-
-    private func importSourceButton(title: String, icon: String, tint: Color) -> some View {
-        VStack(spacing: 8) {
-            Image(systemName: icon)
-                .font(.title2.bold())
-                .foregroundStyle(tint)
-            Text(title)
-                .font(.subheadline.bold())
-                .foregroundStyle(.primary)
-        }
-        .frame(maxWidth: .infinity)
-        .frame(height: 86)
-        .background(.thinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(tint.opacity(0.25)))
-    }
-
-    private func sourcePreview(url: URL) -> some View {
-        VStack(alignment: isArabic ? .trailing : .leading, spacing: 12) {
-            HStack {
-                Text(text("الفيديو الأصلي", "Original Video")).font(.headline.bold())
-                Spacer()
-                Label(text("جاهز", "Ready"), systemImage: "checkmark.circle.fill")
-                    .font(.caption.bold())
-                    .foregroundStyle(.mint)
-            }
-
-            VideoThumbnailView(url: url)
-                .frame(height: 220)
-                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                .overlay(alignment: .bottomLeading) {
-                    HStack(spacing: 8) {
-                        Label("\(report.width)×\(report.height)", systemImage: "rectangle.inset.filled")
-                        Label(String(format: "%.0f FPS", report.fps), systemImage: "speedometer")
-                    }
-                    .font(.caption.bold())
-                    .padding(10)
-                    .background(.black.opacity(0.60))
-                    .foregroundStyle(.white)
-                    .clipShape(Capsule())
-                    .padding(10)
-                }
-        }
+        .padding(16)
         .glassCard()
     }
 
-    private var qualityStats: some View {
-        VStack(spacing: 10) {
-            HStack(spacing: 10) {
-                stat(text("الدقة", "Resolution"), "\(report.width)×\(report.height)", "rectangle.expand.vertical")
-                stat("FPS", String(format: "%.2f", report.fps), "waveform.path.ecg")
+    private func sourceButton(_ title: String, icon: String, tint: Color) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon).foregroundStyle(tint)
+            Text(title).font(.subheadline.bold()).foregroundStyle(.primary)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 48)
+        .background(.thinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(tint.opacity(0.18)))
+    }
+
+    private func previewCard(url: URL) -> some View {
+        VStack(alignment: isArabic ? .trailing : .leading, spacing: 10) {
+            HStack {
+                Text(t("الفيديو الأصلي", "Original Video")).font(.subheadline.bold())
+                Spacer()
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(.mint)
             }
-            HStack(spacing: 10) {
-                stat(text("الترميز", "Codec"), report.codec.uppercased(), "film.stack")
-                stat(text("البت ريت", "Bitrate"), String(format: "%.1f Mbps", report.bitrateMbps), "gauge.with.dots.needle.67percent")
-            }
+            VideoThumbnailView(url: url)
+                .frame(height: 176)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+        }
+        .padding(14)
+        .glassCard()
+    }
+
+    private var statsGrid: some View {
+        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+            stat(t("الدقة", "Resolution"), "\(report.width)×\(report.height)", "rectangle.expand.vertical")
+            stat("FPS", String(format: "%.0f", report.fps), "waveform")
+            stat(t("الترميز", "Codec"), report.codec.uppercased(), "film")
+            stat(t("البت ريت", "Bitrate"), String(format: "%.1f Mbps", report.bitrateMbps), "gauge")
         }
     }
 
-    private var presetCard: some View {
-        VStack(alignment: isArabic ? .trailing : .leading, spacing: 12) {
-            HStack {
-                Text(text("وضع الجودة", "Quality Mode")).font(.headline.bold())
-                Spacer()
-                Image(systemName: "slider.horizontal.3").foregroundStyle(.mint)
-            }
+    private func stat(_ title: String, _ value: String, _ icon: String) -> some View {
+        VStack(alignment: isArabic ? .trailing : .leading, spacing: 5) {
+            Image(systemName: icon).foregroundStyle(.mint)
+            Text(title).font(.caption2).foregroundStyle(.secondary)
+            Text(value).font(.subheadline.bold().monospacedDigit()).lineLimit(1).minimumScaleFactor(0.75)
+        }
+        .frame(maxWidth: .infinity, alignment: isArabic ? .trailing : .leading)
+        .padding(12)
+        .glassCard()
+    }
 
+    private var modeCard: some View {
+        HStack {
+            VStack(alignment: isArabic ? .trailing : .leading, spacing: 3) {
+                Text(t("وضع الجودة", "Quality Mode")).font(.subheadline.bold())
+                Text(presetDescription).font(.caption2).foregroundStyle(.secondary).lineLimit(2)
+            }
+            Spacer()
             Picker("Preset", selection: $preset) {
-                ForEach(RAFLIPreset.allCases) { item in
-                    Text(displayName(item)).tag(item)
-                }
+                ForEach(RAFLIPreset.allCases) { item in Text(displayName(item)).tag(item) }
             }
             .pickerStyle(.menu)
             .tint(.mint)
-
-            Text(presetDescription)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
         }
+        .padding(14)
         .glassCard()
     }
 
-    private var encodeCard: some View {
-        VStack(spacing: 14) {
+    private var processCard: some View {
+        VStack(spacing: 10) {
             if busy {
-                ZStack {
-                    Circle().stroke(Color.primary.opacity(0.08), lineWidth: 10)
-                    Circle()
-                        .trim(from: 0, to: progress)
-                        .stroke(Color.mint, style: StrokeStyle(lineWidth: 10, lineCap: .round))
-                        .rotationEffect(.degrees(-90))
-                    Text("\(Int(progress * 100))%")
-                        .font(.title2.bold().monospacedDigit())
-                }
-                .frame(width: 114, height: 114)
+                ProgressView(value: progress)
+                    .tint(.mint)
+                Text("\(Int(progress * 100))%").font(.caption.bold().monospacedDigit())
             }
-
-            Text(status)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-
-            Button {
-                processVideo()
-            } label: {
-                Label(busy ? text("جاري المعالجة", "Processing") : text("ابدأ التحسين", "Start Enhancement"), systemImage: busy ? "hourglass" : "bolt.fill")
+            Text(status).font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            Button { processVideo() } label: {
+                HStack {
+                    Image(systemName: busy ? "hourglass" : "bolt.fill")
+                    Text(busy ? t("جاري المعالجة", "Processing") : t("ابدأ التحسين", "Start Enhancement"))
+                }
             }
             .buttonStyle(RAFLIPrimaryButton())
             .disabled(busy)
         }
+        .padding(14)
         .glassCard()
     }
 
-    private func comparisonCard(original: URL, enhanced: URL) -> some View {
-        VStack(alignment: isArabic ? .trailing : .leading, spacing: 12) {
-            Text(text("الفيديو الأصلي / بعد التعديل", "Original / Enhanced"))
-                .font(.headline.bold())
-
+    private func compareCard(original: URL, enhanced: URL) -> some View {
+        VStack(alignment: isArabic ? .trailing : .leading, spacing: 10) {
+            Text(t("قبل / بعد", "Before / After")).font(.subheadline.bold())
             HStack(spacing: 10) {
-                miniVideo(title: text("الأصلي", "Original"), url: original, tint: .primary)
-                miniVideo(title: text("بعد التعديل", "Enhanced"), url: enhanced, tint: .mint)
+                miniVideo(t("الأصلي", "Original"), original)
+                miniVideo(t("بعد التعديل", "Enhanced"), enhanced)
             }
         }
-        .glassCard(strong: true)
+        .padding(14)
+        .glassCard()
     }
 
-    private func miniVideo(title: String, url: URL, tint: Color) -> some View {
-        VStack(spacing: 8) {
-            VideoThumbnailView(url: url)
-                .frame(height: 145)
-                .clipShape(RoundedRectangle(cornerRadius: 16))
-            Text(title).font(.caption.bold()).foregroundStyle(tint)
-        }
-        .frame(maxWidth: .infinity)
+    private func miniVideo(_ title: String, _ url: URL) -> some View {
+        VStack(spacing: 6) {
+            VideoThumbnailView(url: url).frame(height: 118).clipShape(RoundedRectangle(cornerRadius: 14))
+            Text(title).font(.caption.bold())
+        }.frame(maxWidth: .infinity)
     }
 
-    private func publishCard(url: URL) -> some View {
-        VStack(spacing: 10) {
-            HStack {
-                Text(text("النتيجة جاهزة", "Result Ready")).font(.headline.bold())
-                Spacer()
-                Image(systemName: "checkmark.seal.fill").foregroundStyle(.mint)
-            }
-
+    private func resultActions(url: URL) -> some View {
+        VStack(spacing: 9) {
             Button {
-                Task {
-                    do { try await uploader.saveToPhotos(file: url); status = text("تم الحفظ في الصور ✅", "Saved to Photos ✅") }
-                    catch { status = error.localizedDescription }
-                }
-            } label: {
-                Label(text("حفظ في الصور", "Save to Photos"), systemImage: "square.and.arrow.down.fill")
-            }
+                Task { try? await uploader.saveToPhotos(file: url) }
+            } label: { Label(t("حفظ في الصور", "Save to Photos"), systemImage: "square.and.arrow.down") }
             .buttonStyle(RAFLIPrimaryButton())
 
-            HStack(spacing: 10) {
-                Button { shareItem = ShareItem(url: url) } label: {
-                    Label(text("مشاركة", "Share"), systemImage: "square.and.arrow.up")
-                }
-                .buttonStyle(RAFLISecondaryButton())
-
-                Button { resetForNewVideo() } label: {
-                    Label(text("فيديو جديد", "New Video"), systemImage: "plus")
-                }
-                .buttonStyle(RAFLISecondaryButton())
+            HStack(spacing: 9) {
+                Button { shareItem = ShareItem(url: url) } label: { Label(t("مشاركة", "Share"), systemImage: "square.and.arrow.up") }
+                    .buttonStyle(RAFLISecondaryButton())
+                Button { reset() } label: { Label(t("جديد", "New"), systemImage: "plus") }
+                    .buttonStyle(RAFLISecondaryButton())
             }
         }
-        .glassCard()
     }
 
     private var videosPage: some View {
         ScrollView(showsIndicators: false) {
-            VStack(spacing: 16) {
-                pageTitle(text("فيديوهاتي", "My Videos"), subtitle: text("مرتب بين الأصلي وبعد التعديل", "Organized by original and enhanced"))
+            VStack(spacing: 14) {
+                pageHeader(t("فيديوهاتي", "My Videos"), subtitle: t("الأصلي والنسخة المحسنة", "Original and enhanced"))
 
-                Picker("Library", selection: $libraryFilter) {
-                    Text(text("الكل", "All")).tag(0)
-                    Text(text("الأصلي", "Original")).tag(1)
-                    Text(text("بعد التعديل", "Enhanced")).tag(2)
+                Picker("Filter", selection: $filter) {
+                    Text(t("الكل", "All")).tag(0)
+                    Text(t("الأصلي", "Original")).tag(1)
+                    Text(t("المحسن", "Enhanced")).tag(2)
                 }
                 .pickerStyle(.segmented)
 
                 if sourceURL == nil && outputURL == nil {
-                    emptyVideos
+                    VStack(spacing: 10) {
+                        Image(systemName: "rectangle.stack.badge.play").font(.system(size: 34)).foregroundStyle(.mint)
+                        Text(t("لا توجد فيديوهات بعد", "No videos yet")).font(.subheadline.bold())
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 44)
+                    .glassCard()
                 } else {
-                    if libraryFilter != 2, let sourceURL {
-                        libraryCard(title: text("الفيديو الأصلي", "Original Video"), badge: text("أصلي", "ORIGINAL"), url: sourceURL, tint: .primary)
-                    }
-                    if libraryFilter != 1, let outputURL {
-                        libraryCard(title: text("الفيديو بعد التعديل", "Enhanced Video"), badge: text("محسن", "ENHANCED"), url: outputURL, tint: .mint)
-                    }
+                    if filter != 2, let sourceURL { libraryCard(t("الفيديو الأصلي", "Original Video"), tag: t("أصلي", "ORIGINAL"), url: sourceURL) }
+                    if filter != 1, let outputURL { libraryCard(t("الفيديو المحسن", "Enhanced Video"), tag: t("محسن", "ENHANCED"), url: outputURL) }
                 }
             }
-            .padding(16)
-            .padding(.bottom, 24)
+            .padding(14)
+            .padding(.bottom, 22)
         }
     }
 
-    private var emptyVideos: some View {
-        VStack(spacing: 14) {
-            Image(systemName: "rectangle.stack.badge.play.fill")
-                .font(.system(size: 44))
-                .foregroundStyle(.mint)
-            Text(text("لا توجد فيديوهات بعد", "No videos yet")).font(.headline)
-            Text(text("اختر فيديو من الرئيسية وسيظهر هنا الأصل والنتيجة.", "Choose a video on Home and both versions will appear here."))
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 44)
-        .glassCard()
-    }
-
-    private func libraryCard(title: String, badge: String, url: URL, tint: Color) -> some View {
-        VStack(alignment: isArabic ? .trailing : .leading, spacing: 11) {
-            VideoThumbnailView(url: url)
-                .frame(height: 210)
-                .clipShape(RoundedRectangle(cornerRadius: 20))
-
-            HStack {
-                VStack(alignment: isArabic ? .trailing : .leading, spacing: 3) {
-                    Text(title).font(.headline.bold())
-                    Text(badge).font(.caption2.bold()).foregroundStyle(tint)
-                }
-                Spacer()
+    private func libraryCard(_ title: String, tag: String, url: URL) -> some View {
+        HStack(spacing: 12) {
+            VideoThumbnailView(url: url).frame(width: 112, height: 86).clipShape(RoundedRectangle(cornerRadius: 14))
+            VStack(alignment: isArabic ? .trailing : .leading, spacing: 5) {
+                Text(title).font(.subheadline.bold())
+                Text(tag).font(.caption2.bold()).foregroundStyle(.mint)
                 Button { shareItem = ShareItem(url: url) } label: {
-                    Image(systemName: "square.and.arrow.up")
-                        .font(.headline)
-                        .foregroundStyle(.mint)
-                        .frame(width: 44, height: 44)
-                        .background(.thinMaterial)
-                        .clipShape(Circle())
-                }
+                    Label(t("مشاركة", "Share"), systemImage: "square.and.arrow.up").font(.caption)
+                }.buttonStyle(.plain).foregroundStyle(.secondary)
             }
+            Spacer()
         }
+        .padding(12)
         .glassCard()
     }
 
     private var profilePage: some View {
         ScrollView(showsIndicators: false) {
-            VStack(spacing: 16) {
-                pageTitle(text("الملف الشخصي", "Profile"), subtitle: text("الإعدادات والحقوق", "Settings and credits"))
+            VStack(spacing: 14) {
+                pageHeader(t("الملف الشخصي", "Profile"), subtitle: t("الإعدادات", "Settings"))
 
-                VStack(spacing: 14) {
-                    RAFLILogoView(pulse: pulse)
-                        .frame(width: 92, height: 92)
-                    Text(text("الإصدار 1.1", "Version 1.1"))
-                        .font(.headline.bold())
-                        .foregroundStyle(.mint)
+                HStack(spacing: 12) {
+                    Image("RAFLILogo")
+                        .resizable().scaledToFit()
+                        .frame(width: 64, height: 64)
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                    VStack(alignment: isArabic ? .trailing : .leading, spacing: 3) {
+                        Text("RAFLI").font(.headline.bold())
+                        Text(t("الإصدار 1.1", "Version 1.1")).font(.caption).foregroundStyle(.mint)
+                    }
+                    Spacer()
                 }
-                .frame(maxWidth: .infinity)
-                .glassCard(strong: true)
+                .padding(14)
+                .glassCard()
 
                 Button {
                     if let url = URL(string: "https://t.me/ucorc") { UIApplication.shared.open(url) }
                 } label: {
-                    HStack(spacing: 14) {
-                        ZStack {
-                            Circle().fill(Color.blue).frame(width: 48, height: 48)
-                            Image(systemName: "paperplane.fill").foregroundStyle(.white)
-                        }
+                    HStack(spacing: 12) {
+                        Image(systemName: "paperplane.fill")
+                            .foregroundStyle(.white)
+                            .frame(width: 42, height: 42)
+                            .background(Color.blue)
+                            .clipShape(Circle())
                         VStack(alignment: isArabic ? .trailing : .leading, spacing: 2) {
-                            Text(text("المطور", "Developer")).font(.headline.bold())
-                            Text("@ucorc").font(.subheadline.bold()).foregroundStyle(.mint)
+                            Text(t("المطور", "Developer")).font(.subheadline.bold())
+                            Text("@ucorc").font(.caption.bold()).foregroundStyle(.mint)
                         }
                         Spacer()
-                        Image(systemName: "arrow.up.right").foregroundStyle(.secondary)
+                        Image(systemName: "chevron.forward").foregroundStyle(.secondary)
                     }
-                    .padding(16)
                 }
                 .buttonStyle(.plain)
-                .glassCard(strong: true)
+                .padding(14)
+                .glassCard()
 
                 VStack(spacing: 0) {
-                    HStack {
-                        Label(text("اللغة", "Language"), systemImage: "globe")
-                        Spacer()
+                    settingsRow(t("اللغة", "Language"), icon: "globe") {
                         Picker("Language", selection: $language) {
                             Text("العربية").tag("ar")
                             Text("English").tag("en")
-                        }
-                        .pickerStyle(.menu)
-                        .tint(.mint)
+                        }.pickerStyle(.menu).tint(.mint)
                     }
-                    .padding(.vertical, 12)
-
-                    Divider().opacity(0.25)
-
-                    HStack {
-                        Label(text("المظهر", "Appearance"), systemImage: isLight ? "sun.max.fill" : "moon.stars.fill")
-                        Spacer()
+                    Divider().opacity(0.2)
+                    settingsRow(t("المظهر", "Appearance"), icon: isLight ? "sun.max.fill" : "moon.fill") {
                         Picker("Theme", selection: $theme) {
-                            Text(text("زجاجي غامق", "Dark Glass")).tag("dark")
-                            Text(text("زجاجي فاتح", "Light Glass")).tag("light")
-                        }
-                        .pickerStyle(.menu)
-                        .tint(.mint)
+                            Text(t("زجاجي غامق", "Dark Glass")).tag("dark")
+                            Text(t("زجاجي فاتح", "Light Glass")).tag("light")
+                        }.pickerStyle(.menu).tint(.mint)
                     }
-                    .padding(.vertical, 12)
-
-                    Divider().opacity(0.25)
-
-                    HStack {
-                        Label(text("الإصدار", "Version"), systemImage: "info.circle.fill")
-                        Spacer()
+                    Divider().opacity(0.2)
+                    settingsRow(t("الإصدار", "Version"), icon: "info.circle") {
                         Text("1.1").foregroundStyle(.secondary)
                     }
-                    .padding(.vertical, 12)
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, 14)
                 .glassCard()
 
                 Button {
-                    withAnimation { accessGranted = false; accessCode = "" }
-                } label: {
-                    Label(text("تسجيل خروج", "Log Out"), systemImage: "rectangle.portrait.and.arrow.right")
-                }
+                    accessGranted = false
+                    code = ""
+                    loginError = ""
+                } label: { Label(t("تسجيل خروج", "Log Out"), systemImage: "rectangle.portrait.and.arrow.right") }
                 .buttonStyle(RAFLISecondaryButton())
             }
-            .padding(16)
-            .padding(.bottom, 24)
+            .padding(14)
+            .padding(.bottom, 22)
         }
+    }
+
+    private func settingsRow<Content: View>(_ title: String, icon: String, @ViewBuilder content: () -> Content) -> some View {
+        HStack {
+            Label(title, systemImage: icon).font(.subheadline)
+            Spacer()
+            content()
+        }.padding(.vertical, 13)
     }
 
     private var bottomBar: some View {
-        HStack(spacing: 8) {
-            navButton(index: 0, title: text("الرئيسية", "Home"), icon: "house.fill")
-            navButton(index: 1, title: text("فيديوهاتي", "Videos"), icon: "folder.fill")
-            navButton(index: 2, title: text("الملف", "Profile"), icon: "person.fill")
+        HStack(spacing: 4) {
+            nav(0, t("الرئيسية", "Home"), "house.fill")
+            nav(1, t("فيديوهاتي", "Videos"), "rectangle.stack.fill")
+            nav(2, t("الملف", "Profile"), "person.fill")
         }
-        .padding(.horizontal, 12)
-        .padding(.top, 10)
-        .padding(.bottom, 8)
+        .padding(.horizontal, 8)
+        .padding(.top, 8)
+        .padding(.bottom, 6)
         .background(.ultraThinMaterial)
-        .overlay(alignment: .top) { Rectangle().fill(Color.mint.opacity(0.12)).frame(height: 1) }
+        .overlay(alignment: .top) { Rectangle().fill(Color.mint.opacity(0.10)).frame(height: 1) }
     }
 
-    private func navButton(index: Int, title: String, icon: String) -> some View {
+    private func nav(_ index: Int, _ title: String, _ icon: String) -> some View {
         Button {
-            withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) { tab = index }
+            withAnimation(.easeOut(duration: 0.18)) { tab = index }
         } label: {
-            VStack(spacing: 5) {
-                Image(systemName: icon).font(.title3.bold())
-                Text(title).font(.caption.bold())
+            VStack(spacing: 3) {
+                Image(systemName: icon).font(.system(size: 17, weight: .semibold))
+                Text(title).font(.caption2.weight(.semibold))
             }
             .foregroundStyle(tab == index ? Color.mint : Color.secondary)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 10)
-            .background(tab == index ? Color.mint.opacity(0.12) : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 18))
+            .padding(.vertical, 7)
+            .background(tab == index ? Color.mint.opacity(0.10) : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+        }.buttonStyle(.plain)
+    }
+
+    private func pageHeader(_ title: String, subtitle: String) -> some View {
+        HStack {
+            VStack(alignment: isArabic ? .trailing : .leading, spacing: 2) {
+                Text(title).font(.title2.bold())
+                Text(subtitle).font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
         }
-        .buttonStyle(.plain)
     }
 
     private func authenticate() {
-        if accessCode.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "1v" {
-            loginMessage = ""
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { accessGranted = true }
-        } else {
-            loginMessage = text("الكود غير صحيح", "Incorrect code")
+        let entered = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard entered == "1v" else {
+            loginError = t("الكود غير صحيح", "Incorrect code")
+            accessGranted = false
+            return
         }
+        loginError = ""
+        accessGranted = true
     }
 
-    private func loadPhotoVideo(_ item: PhotosPickerItem) {
+    private func loadPhoto(_ item: PhotosPickerItem) {
         Task {
             do {
-                guard let data = try await item.loadTransferable(type: Data.self) else {
-                    await MainActor.run { status = text("تعذر قراءة الفيديو", "Could not read video") }
-                    return
-                }
-                let temp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + "_PHOTO.mov")
-                try data.write(to: temp, options: .atomic)
-                try await analyzeAndUse(temp)
-            } catch {
-                await MainActor.run { status = error.localizedDescription }
-            }
+                guard let data = try await item.loadTransferable(type: Data.self) else { return }
+                let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".mov")
+                try data.write(to: url, options: .atomic)
+                try await analyze(url)
+            } catch { await MainActor.run { status = error.localizedDescription } }
         }
     }
 
-    private func loadFileVideo(_ url: URL) {
+    private func loadFile(_ url: URL) {
         Task {
-            let access = url.startAccessingSecurityScopedResource()
-            defer { if access { url.stopAccessingSecurityScopedResource() } }
+            let security = url.startAccessingSecurityScopedResource()
+            defer { if security { url.stopAccessingSecurityScopedResource() } }
             do {
                 let ext = url.pathExtension.isEmpty ? "mov" : url.pathExtension
-                let temp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + "_FILE." + ext)
-                try? FileManager.default.removeItem(at: temp)
+                let temp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + "." + ext)
                 try FileManager.default.copyItem(at: url, to: temp)
-                try await analyzeAndUse(temp)
-            } catch {
-                await MainActor.run { status = error.localizedDescription }
-            }
+                try await analyze(temp)
+            } catch { await MainActor.run { status = error.localizedDescription } }
         }
     }
 
-    private func analyzeAndUse(_ url: URL) async throws {
-        let newReport = try await VideoAnalyzer.analyze(url)
+    private func analyze(_ url: URL) async throws {
+        let r = try await VideoAnalyzer.analyze(url)
         await MainActor.run {
             sourceURL = url
             outputURL = nil
-            report = newReport
+            report = r
             progress = 0
+            status = t("تم تحليل الفيديو", "Video analyzed")
             tab = 0
-            status = text("تم تحليل الفيديو الحقيقي ✅", "Video analyzed successfully ✅")
         }
     }
 
@@ -669,111 +563,54 @@ struct ContentView: View {
         guard let sourceURL else { return }
         busy = true
         progress = 0
-        status = text("جاري تجهيز الفيديو…", "Preparing video…")
-
+        status = t("جاري المعالجة…", "Processing…")
         Task {
             do {
-                let output = try await VideoProcessor.export(source: sourceURL, preset: preset, report: report) { value in
+                let out = try await VideoProcessor.export(source: sourceURL, preset: preset, report: report) { value in
                     Task { @MainActor in progress = value }
                 }
                 await MainActor.run {
-                    outputURL = output
+                    outputURL = out
                     busy = false
                     progress = 1
-                    status = text("تم تجهيز الفيديو ✅", "Video ready ✅")
+                    status = t("الفيديو جاهز", "Video ready")
                 }
             } catch {
-                await MainActor.run {
-                    busy = false
-                    status = error.localizedDescription
-                }
+                await MainActor.run { busy = false; status = error.localizedDescription }
             }
         }
     }
 
-    private func resetForNewVideo() {
+    private func reset() {
         sourceURL = nil
         outputURL = nil
         report = VideoReport()
-        progress = 0
         photoItem = nil
-        status = text("اختر فيديو جديد من الصور أو الملفات", "Choose a new video from Photos or Files")
+        progress = 0
+        status = t("اختر فيديو من الصور أو الملفات", "Choose a video from Photos or Files")
     }
 
-    private func pageTitle(_ title: String, subtitle: String) -> some View {
-        HStack {
-            VStack(alignment: isArabic ? .trailing : .leading, spacing: 4) {
-                Text(title).font(.largeTitle.bold())
-                Text(subtitle).font(.footnote).foregroundStyle(.secondary)
-            }
-            Spacer()
-        }
-    }
+    private func t(_ ar: String, _ en: String) -> String { isArabic ? ar : en }
 
-    private func stat(_ title: String, _ value: String, _ icon: String) -> some View {
-        VStack(alignment: isArabic ? .trailing : .leading, spacing: 7) {
-            Image(systemName: icon).foregroundStyle(.mint)
-            Text(title).font(.caption).foregroundStyle(.secondary)
-            Text(value).font(.headline.monospacedDigit())
-        }
-        .frame(maxWidth: .infinity, alignment: isArabic ? .trailing : .leading)
-        .padding(14)
-        .glassCard()
-    }
-
-    private func featureChip(_ title: String, _ icon: String) -> some View {
-        Label(title, systemImage: icon)
-            .font(.caption.bold())
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .background(.thinMaterial)
-            .clipShape(Capsule())
-            .overlay(Capsule().stroke(Color.mint.opacity(0.16)))
-    }
-
-    private func text(_ ar: String, _ en: String) -> String { isArabic ? ar : en }
-
-    private func displayName(_ preset: RAFLIPreset) -> String {
-        switch preset {
-        case .preserve: return text("الحفاظ على الأصل", "Preserve Original")
-        case .smart: return text("RAFLI ذكي", "RAFLI Smart")
-        case .tiktokSafe: return text("TikTok 1080 آمن", "TikTok Safe 1080")
-        case .highMotion: return text("حركة عالية", "High Motion")
-        case .maxQuality: return text("أقصى جودة", "ULTRA MAX")
-        case .compact: return text("حجم أخف", "Compact")
+    private func displayName(_ p: RAFLIPreset) -> String {
+        switch p {
+        case .preserve: return t("الحفاظ على الأصل", "Preserve")
+        case .smart: return t("ذكي", "Smart")
+        case .tiktokSafe: return "TikTok 1080"
+        case .highMotion: return t("حركة عالية", "High Motion")
+        case .maxQuality: return "ULTRA MAX"
+        case .compact: return t("خفيف", "Compact")
         }
     }
 
     private var presetDescription: String {
         switch preset {
-        case .preserve: return text("بدون إعادة ترميز عندما يكون ذلك ممكنًا.", "Avoids re-encoding when possible.")
-        case .smart: return text("يضبط البت ريت تلقائيًا حسب المصدر.", "Adapts bitrate to the source.")
-        case .tiktokSafe: return text("1080p H.264 بإعداد متوازن.", "Balanced 1080p H.264 output.")
-        case .highMotion: return text("بت ريت أعلى للمشاهد السريعة.", "Higher bitrate for fast motion.")
-        case .maxQuality: return text("أقوى إعداد ترميز متاح داخل RAFLI.", "Highest RAFLI encoding preset.")
-        case .compact: return text("حجم أصغر مع جودة مناسبة.", "Smaller file with practical quality.")
-        }
-    }
-}
-
-struct RAFLILogoView: View {
-    let pulse: Bool
-
-    var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(LinearGradient(colors: [Color(red: 0.0, green: 0.18, blue: 0.14), Color(red: 0.0, green: 0.045, blue: 0.04)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                .shadow(color: .mint.opacity(pulse ? 0.55 : 0.22), radius: pulse ? 26 : 10)
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .stroke(Color.white.opacity(0.18), lineWidth: 1)
-            VStack(spacing: -2) {
-                ZStack {
-                    Circle().stroke(Color.white.opacity(0.72), lineWidth: 3)
-                    Image(systemName: "arrow.up").font(.title2.black()).foregroundStyle(.white)
-                }
-                .frame(width: 42, height: 42)
-                Image(systemName: "tray.fill").font(.system(size: 38, weight: .light)).foregroundStyle(.white.opacity(0.72))
-            }
+        case .preserve: return t("يحافظ على الملف بدون إعادة ترميز عند الإمكان", "Keeps the source when possible")
+        case .smart: return t("إعداد تلقائي حسب المصدر", "Adapts to the source")
+        case .tiktokSafe: return "Balanced 1080p H.264"
+        case .highMotion: return t("بت ريت أعلى للمشاهد السريعة", "Higher bitrate for motion")
+        case .maxQuality: return t("أقوى إعداد داخل RAFLI", "Highest RAFLI preset")
+        case .compact: return t("حجم أقل مع جودة مناسبة", "Smaller practical output")
         }
     }
 }
@@ -784,24 +621,24 @@ struct VideoThumbnailView: View {
 
     var body: some View {
         ZStack {
-            Rectangle().fill(Color.black.opacity(0.26))
-            if let image {
-                Image(uiImage: image).resizable().scaledToFill()
-            } else {
-                ProgressView().tint(.mint)
-            }
-            Circle().fill(.black.opacity(0.50)).frame(width: 50, height: 50)
-            Image(systemName: "play.fill").foregroundStyle(.white)
+            Color.black.opacity(0.20)
+            if let image { Image(uiImage: image).resizable().scaledToFill() }
+            else { ProgressView().tint(.mint) }
+            Image(systemName: "play.fill")
+                .foregroundStyle(.white)
+                .padding(10)
+                .background(.black.opacity(0.42))
+                .clipShape(Circle())
         }
         .clipped()
-        .task { image = await thumbnail() }
+        .task { image = await makeThumbnail() }
     }
 
-    private func thumbnail() async -> UIImage? {
+    private func makeThumbnail() async -> UIImage? {
         let asset = AVURLAsset(url: url)
         let generator = AVAssetImageGenerator(asset: asset)
         generator.appliesPreferredTrackTransform = true
-        generator.maximumSize = CGSize(width: 900, height: 900)
+        generator.maximumSize = CGSize(width: 800, height: 800)
         do {
             let cg = try generator.copyCGImage(at: CMTime(seconds: 0.2, preferredTimescale: 600), actualTime: nil)
             return UIImage(cgImage: cg)
@@ -816,45 +653,42 @@ struct ShareItem: Identifiable {
 
 struct ShareSheet: UIViewControllerRepresentable {
     let items: [Any]
-    func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: items, applicationActivities: nil)
-    }
+    func makeUIViewController(context: Context) -> UIActivityViewController { UIActivityViewController(activityItems: items, applicationActivities: nil) }
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
 struct RAFLIPrimaryButton: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.headline.bold())
+            .font(.subheadline.bold())
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 15)
+            .padding(.horizontal, 16)
+            .frame(height: 48)
             .foregroundStyle(.black)
-            .background(LinearGradient(colors: [Color.mint.opacity(configuration.isPressed ? 0.62 : 0.98), Color.green.opacity(configuration.isPressed ? 0.44 : 0.76)], startPoint: .leading, endPoint: .trailing))
-            .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
-            .shadow(color: .mint.opacity(0.18), radius: 12)
+            .background(LinearGradient(colors: [.mint.opacity(configuration.isPressed ? 0.72 : 0.98), .green.opacity(configuration.isPressed ? 0.48 : 0.72)], startPoint: .leading, endPoint: .trailing))
+            .clipShape(RoundedRectangle(cornerRadius: 15))
     }
 }
 
 struct RAFLISecondaryButton: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.subheadline.bold())
+            .font(.caption.bold())
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
+            .padding(.horizontal, 12)
+            .frame(height: 44)
             .foregroundStyle(.mint)
             .background(.thinMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 17).stroke(Color.mint.opacity(configuration.isPressed ? 0.10 : 0.24)))
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.mint.opacity(0.18)))
     }
 }
 
 extension View {
-    func glassCard(strong: Bool = false) -> some View {
+    func glassCard() -> some View {
         self
-            .padding(16)
-            .frame(maxWidth: .infinity)
-            .background(strong ? AnyShapeStyle(.regularMaterial) : AnyShapeStyle(.ultraThinMaterial))
-            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(Color.mint.opacity(strong ? 0.20 : 0.10), lineWidth: 1))
+            .background(.ultraThinMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Color.mint.opacity(0.10), lineWidth: 1))
     }
 }
