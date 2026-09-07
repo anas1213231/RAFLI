@@ -1,0 +1,29 @@
+name: RAFLI
+options:
+  bundleIdPrefix: com.ucorc
+settings:
+  base:
+    IPHONEOS_DEPLOYMENT_TARGET: 16.0
+    SWIFT_VERSION: 5.9
+    TARGETED_DEVICE_FAMILY: 1
+    CODE_SIGN_STYLE: Automatic
+    PRODUCT_BUNDLE_IDENTIFIER: com.ucorc.rafli.power
+    DEVELOPMENT_TEAM: ""
+targets:
+  RAFLI:
+    type: application
+    platform: iOS
+    sources: [RAFLI/Sources]
+    info:
+      path: RAFLI/Info.plist
+      properties:
+        CFBundleDisplayName: RAFLI
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+        NSPhotoLibraryUsageDescription: "RAFLI needs access to choose videos you own and prepare them locally."
+    settings:
+      base:
+        PRODUCT_NAME: RAFLI
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
