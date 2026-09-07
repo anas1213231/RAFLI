@@ -25,6 +25,22 @@ final class RAFLIStorage {
     func restoredSource() -> URL? { restored("rafli_last_source") }
     func restoredOutput() -> URL? { restored("rafli_last_output") }
 
+    func allVideos() -> [URL] {
+        let allowed = Set(["mp4", "mov", "m4v"])
+        let urls = (try? FileManager.default.contentsOfDirectory(
+            at: folder,
+            includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey],
+            options: [.skipsHiddenFiles]
+        )) ?? []
+        return urls
+            .filter { allowed.contains($0.pathExtension.lowercased()) }
+            .sorted {
+                let a = (try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                let b = (try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                return a > b
+            }
+    }
+
     private func restored(_ key: String) -> URL? {
         guard let path = UserDefaults.standard.string(forKey: key), FileManager.default.fileExists(atPath: path) else { return nil }
         return URL(fileURLWithPath: path)
