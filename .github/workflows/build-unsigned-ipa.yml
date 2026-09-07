@@ -2,6 +2,8 @@ name: Build RAFLI V5 Unsigned IPA
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
 
 jobs:
   build:
