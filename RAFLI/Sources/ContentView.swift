@@ -1,63 +1,716 @@
 import SwiftUI
 import UniformTypeIdentifiers
 import UIKit
+import AVFoundation
+import AVKit
 
 struct ContentView: View {
-    @AppStorage("telegramOpened") private var telegramOpened=false
-    @AppStorage("accessGranted") private var accessGranted=false
-    @State private var showPicker=false
-    @State private var fileURL:URL?
-    @State private var report=VideoReport()
-    @State private var preset:RAFLIPreset = .maxQuality
-    @State private var busy=false
-    @State private var progress=0.0
-    @State private var status="اختر الفيديو الأصلي، وليس نسخة محمّلة من TikTok."
-    @State private var outputURL:URL?
-    @State private var share=false
-    @StateObject private var uploader=RAFLIUploadEngine()
-    @State private var showDirectSettings=false
+    @AppStorage("rafli_language") private var language = "ar"
+    @State private var tab = 0
+    @State private var showPicker = false
+    @State private var sourceURL: URL?
+    @State private var outputURL: URL?
+    @State private var report = VideoReport()
+    @State private var preset: RAFLIPreset = .maxQuality
+    @State private var busy = false
+    @State private var progress = 0.0
+    @State private var status = ""
+    @State private var shareURL: URL?
+    @State private var pulse = false
+    @StateObject private var uploader = RAFLIUploadEngine()
+
+    private var isArabic: Bool { language == "ar" }
 
     var body: some View {
         ZStack {
-            LinearGradient(colors:[.black,Color(red:0,green:0.09,blue:0.065),Color(red:0,green:0.03,blue:0.04)],startPoint:.topLeading,endPoint:.bottomTrailing).ignoresSafeArea()
-            Circle().fill(Color.mint.opacity(0.10)).frame(width:320).blur(radius:80).offset(x:150,y:-300)
-            ScrollView { VStack(spacing:14) {
-                HStack { VStack(alignment:.leading,spacing:2){Text("RAFLI").font(.title.bold());Text("ULTRA ENGINE V5").font(.caption2.bold()).foregroundStyle(.mint)}; Spacer(); Text("@ucorc").font(.caption.bold()).foregroundStyle(.mint).padding(.horizontal,10).padding(.vertical,6).background(Color.mint.opacity(0.08)).clipShape(Capsule()) }.padding(.top,6)
-                hero
-                if fileURL != nil { reportCard; presetCard; controls }
-                if outputURL != nil { publishCard }
-                Text("100% FREE · Native iOS · @ucorc").font(.caption2).foregroundStyle(.secondary).padding(.vertical,8)
-            }.padding() }
-            if !accessGranted { gate }
+            premiumBackground
+            VStack(spacing: 0) {
+                Group {
+                    switch tab {
+                    case 1: videosPage
+                    case 2: profilePage
+                    default: homePage
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                bottomBar
+            }
         }
         .preferredColorScheme(.dark)
-        .fileImporter(isPresented:$showPicker,allowedContentTypes:[.movie],allowsMultipleSelection:false){ result in if case let .success(urls)=result,let u=urls.first { load(u) } }
-        .sheet(isPresented:$share){ if let u=outputURL { ShareSheet(items:[u]) } }
+        .environment(\.layoutDirection, isArabic ? .rightToLeft : .leftToRight)
+        .fileImporter(isPresented: $showPicker, allowedContentTypes: [.movie], allowsMultipleSelection: false) { result in
+            if case let .success(urls) = result, let url = urls.first { loadVideo(url) }
+        }
+        .sheet(item: $shareURL) { url in ShareSheet(items: [url]) }
+        .onAppear {
+            status = text("اختر فيديو أصلي وخلّي ارفعلي يجهزه للنشر", "Choose an original video and let RAFLI prepare it")
+            withAnimation(.easeInOut(duration: 2.2).repeatForever(autoreverses: true)) { pulse = true }
+        }
     }
 
-    private var hero: some View { VStack(alignment:.trailing,spacing:11){ Text("NATIVE VIDEO PIPELINE").font(.caption.bold()).foregroundStyle(.mint); Text("ترميز قوي فعليًا على الآيفون").font(.system(size:29,weight:.heavy)); Text("H.264 High/CABAC • 1080p • حتى 30 Mbps • Scale/Crop حقيقي • AAC 256k • Fast Start").font(.footnote).foregroundStyle(.secondary); Button("✦ اختر الفيديو الأصلي"){showPicker=true}.buttonStyle(RAFLIButton()) }.rafliCard() }
+    private var premiumBackground: some View {
+        ZStack {
+            LinearGradient(
+                colors: [Color.black, Color(red: 0.005, green: 0.075, blue: 0.055), Color(red: 0.0, green: 0.025, blue: 0.035)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
 
-    private var reportCard: some View { VStack(spacing:12){ HStack{stat("RESOLUTION","\(report.width)×\(report.height)");stat("FPS",String(format:"%.2f",report.fps))}; HStack{stat("CODEC",report.codec.uppercased());stat("BITRATE",String(format:"%.2f Mbps",report.bitrateMbps))}; HStack{stat("AUDIO",report.hasAudio ? "YES":"NO");stat("SCORE","\(report.score)/100")}; Text(report.is1080 && report.is60 ? "🔥 مصدر 1080p60 قوي — استخدم ULTRA MAX" : "⚠️ لا يمكن للترميز إعادة تفاصيل غير موجودة في المصدر").font(.footnote.bold()).foregroundStyle(report.is1080 && report.is60 ? Color.mint:Color.orange) }.rafliCard() }
+            Circle()
+                .fill(Color.mint.opacity(0.14))
+                .frame(width: 320, height: 320)
+                .blur(radius: 90)
+                .offset(x: pulse ? 150 : 90, y: pulse ? -320 : -250)
 
-    private var presetCard: some View { VStack(alignment:.trailing,spacing:9){ Text("RAFLI PRESET").font(.caption.bold()).foregroundStyle(.mint); Picker("Preset",selection:$preset){ForEach(RAFLIPreset.allCases){Text($0.rawValue).tag($0)}}.pickerStyle(.menu).tint(.mint); Text(presetText).font(.footnote).foregroundStyle(.secondary) }.rafliCard() }
-    private var presetText:String { switch preset { case .preserve:return "يحافظ على المصدر بدون إعادة ترميز."; case .smart:return "يضبط bitrate تلقائيًا حتى 22 Mbps."; case .tiktokSafe:return "1080p · 14 Mbps · H.264 High."; case .highMotion:return "1080p · 22 Mbps · Keyframe كل ثانية."; case .maxQuality:return "1080p · 30 Mbps · High/CABAC · AAC 256k."; case .compact:return "1080p · 8 Mbps لحجم أقل." } }
+            Circle()
+                .fill(Color.green.opacity(0.07))
+                .frame(width: 260, height: 260)
+                .blur(radius: 100)
+                .offset(x: pulse ? -170 : -100, y: pulse ? 300 : 220)
+        }
+    }
 
-    private var controls: some View { VStack(spacing:10){ Text(status).font(.footnote).foregroundStyle(.secondary).frame(maxWidth:.infinity,alignment:.trailing); if busy {ProgressView(value:progress).tint(.mint);Text("\(Int(progress*100))%").font(.caption.monospacedDigit()).foregroundStyle(.mint)}; Button(busy ? "جاري الترميز…":"✦ شغّل RAFLI ULTRA ENCODE"){process()}.buttonStyle(RAFLIButton()).disabled(busy); if outputURL != nil {Button("مشاركة الملف الجاهز"){share=true}.buttonStyle(RAFLISecondaryButton())} }.rafliCard() }
+    private var homePage: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: 16) {
+                header
+                heroCard
 
-    private var publishCard: some View { VStack(alignment:.trailing,spacing:11){ HStack{Text("RAFLI PUBLISH GUARD").font(.caption.bold()).foregroundStyle(.mint);Spacer();Text("V5").font(.caption.bold()).foregroundStyle(.mint)}; Text(uploader.status).font(.footnote).foregroundStyle(.secondary); if uploader.uploadProgress>0 && uploader.uploadProgress<1 {ProgressView(value:uploader.uploadProgress).tint(.mint)}
-        Button("① حفظ في الصور بجودة RAFLI"){guard let out=outputURL else{return};Task{do{try await uploader.saveToPhotos(file:out)}catch{uploader.status="خطأ: \(error.localizedDescription)"}}}.buttonStyle(RAFLIButton())
-        Button("② حفظ ثم فتح TikTok"){guard let out=outputURL else{return};Task{do{try await uploader.saveToPhotos(file:out);await uploader.openTikTok()}catch{uploader.status="خطأ: \(error.localizedDescription)"}}}.buttonStyle(RAFLISecondaryButton())
-        Divider().overlay(Color.mint.opacity(0.15)); DisclosureGroup("الإعداد الرسمي الاختياري",isExpanded:$showDirectSettings){ VStack(spacing:9){TextField("https://your-backend.example",text:$uploader.backendURL).textInputAutocapitalization(.never).keyboardType(.URL).padding(10).background(.white.opacity(0.05)).clipShape(RoundedRectangle(cornerRadius:12)); Button("ربط TikTok رسميًا"){Task{do{try await uploader.startTikTokLink()}catch{uploader.status="خطأ: \(error.localizedDescription)"}}}.buttonStyle(RAFLISecondaryButton()); Button("فحص الربط"){Task{do{try await uploader.checkLink()}catch{uploader.status="خطأ: \(error.localizedDescription)"}}}.buttonStyle(RAFLISecondaryButton()); if uploader.linked,let out=outputURL {Button("رفع Draft عبر TikTok API"){Task{do{_ = try await uploader.uploadDraft(file:out)}catch{uploader.status="خطأ: \(error.localizedDescription)"}}}.buttonStyle(RAFLIButton())}; if !uploader.lastPublishID.isEmpty {Text("PUBLISH ID: \(uploader.lastPublishID)").font(.caption2.monospaced()).foregroundStyle(.secondary);Button("فحص حالة TikTok"){Task{do{try await uploader.checkPublishStatus()}catch{uploader.status="خطأ: \(error.localizedDescription)"}}}.buttonStyle(RAFLISecondaryButton())} }.padding(.top,8) }
-    }.rafliCard() }
+                if let sourceURL {
+                    sourcePreview(url: sourceURL)
+                    qualityStats
+                    presetCard
+                    encodeCard
+                }
 
-    private var gate: some View { ZStack{Color.black.opacity(0.96).ignoresSafeArea();VStack(spacing:16){Text("RAFLI").font(.largeTitle.bold());Text("FREE ACCESS · @ucorc").font(.caption.bold()).foregroundStyle(.mint);Text("افتح قناة الحقوق مرة واحدة ثم ارجع واضغط دخول.").foregroundStyle(.secondary).multilineTextAlignment(.center);Button("فتح Telegram @ucorc"){telegramOpened=true;if let u=URL(string:"https://t.me/ucorc"){UIApplication.shared.open(u)}}.buttonStyle(RAFLIButton());Button("دخول RAFLI"){if telegramOpened{accessGranted=true}}.buttonStyle(RAFLISecondaryButton()).disabled(!telegramOpened)}.padding(28)} }
+                if let sourceURL, let outputURL {
+                    comparisonCard(original: sourceURL, enhanced: outputURL)
+                    publishCard(url: outputURL)
+                }
 
-    private func stat(_ title:String,_ value:String)->some View { VStack(alignment:.trailing){Text(title).font(.caption2).foregroundStyle(.secondary);Text(value).font(.headline.monospacedDigit())}.frame(maxWidth:.infinity,alignment:.trailing).padding(10).background(.white.opacity(0.035)).clipShape(RoundedRectangle(cornerRadius:12)) }
-    private func load(_ url:URL){ Task{@MainActor in let access=url.startAccessingSecurityScopedResource();defer{if access{url.stopAccessingSecurityScopedResource()}};do{let tmp=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString+"_SOURCE.mp4");try? FileManager.default.removeItem(at:tmp);try FileManager.default.copyItem(at:url,to:tmp);fileURL=tmp;report=try await VideoAnalyzer.analyze(tmp);status="تم تحليل المصدر الحقيقي ✅";outputURL=nil}catch{status="خطأ: \(error.localizedDescription)"}} }
-    private func process(){guard let source=fileURL else{return};busy=true;progress=0;status="RAFLI يعمل…";Task{do{let out=try await VideoProcessor.export(source:source,preset:preset,report:report){p in Task{@MainActor in progress=p}};await MainActor.run{outputURL=out;busy=false;progress=1;status="تم تجهيز RAFLI ULTRA READY ✅"}}catch{await MainActor.run{busy=false;status="خطأ: \(error.localizedDescription)"}}}} 
+                Text("100% FREE · NO WATERMARK · @ucorc")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.45))
+                    .padding(.top, 2)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+            .padding(.bottom, 28)
+        }
+    }
+
+    private var header: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: isArabic ? .trailing : .leading, spacing: 2) {
+                Text(text("ارفعلي", "RAFLI"))
+                    .font(.system(size: 30, weight: .black, design: .rounded))
+                Text("Higher Quality. Always.")
+                    .font(.caption)
+                    .foregroundStyle(.mint.opacity(0.85))
+            }
+            Spacer()
+            Text("@ucorc")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.mint)
+                .padding(.horizontal, 11)
+                .padding(.vertical, 7)
+                .background(.ultraThinMaterial)
+                .clipShape(Capsule())
+                .overlay(Capsule().stroke(Color.mint.opacity(0.20)))
+        }
+    }
+
+    private var heroCard: some View {
+        Button { showPicker = true } label: {
+            VStack(spacing: 16) {
+                ZStack {
+                    Circle()
+                        .fill(Color.mint.opacity(pulse ? 0.24 : 0.11))
+                        .frame(width: 116, height: 116)
+                        .blur(radius: pulse ? 14 : 5)
+                    Circle()
+                        .fill(LinearGradient(colors: [Color.mint.opacity(0.85), Color.green.opacity(0.35)], startPoint: .top, endPoint: .bottom))
+                        .frame(width: 88, height: 88)
+                        .overlay(Circle().stroke(.white.opacity(0.35), lineWidth: 1))
+                    Image(systemName: "arrow.up")
+                        .font(.system(size: 35, weight: .black))
+                        .foregroundStyle(.white)
+                }
+                .scaleEffect(pulse ? 1.03 : 0.97)
+
+                VStack(spacing: 5) {
+                    Text(text("اختر الفيديو", "Select Video"))
+                        .font(.title3.weight(.bold))
+                    Text(text("اضغط لاختيار فيديو من ملفاتك", "Tap to choose a video from your files"))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                HStack(spacing: 8) {
+                    chip("4K", icon: "4k.tv")
+                    chip("60 FPS", icon: "waveform")
+                    chip(text("مجاني", "FREE"), icon: "infinity")
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 24)
+        }
+        .buttonStyle(.plain)
+        .glassCard(strong: true)
+    }
+
+    private func sourcePreview(url: URL) -> some View {
+        VStack(alignment: isArabic ? .trailing : .leading, spacing: 12) {
+            HStack {
+                Text(text("الفيديو الأصلي", "Original Video"))
+                    .font(.headline.weight(.bold))
+                Spacer()
+                Label(text("تم التحليل", "Analyzed"), systemImage: "checkmark.circle.fill")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.mint)
+            }
+
+            VideoThumbnailView(url: url)
+                .frame(height: 210)
+                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .overlay(alignment: .bottomLeading) {
+                    HStack(spacing: 8) {
+                        Label("\(report.width)×\(report.height)", systemImage: "rectangle.inset.filled")
+                        Label(String(format: "%.0f FPS", report.fps), systemImage: "speedometer")
+                    }
+                    .font(.caption.weight(.semibold))
+                    .padding(10)
+                    .background(.black.opacity(0.58))
+                    .clipShape(Capsule())
+                    .padding(10)
+                }
+        }
+        .glassCard()
+    }
+
+    private var qualityStats: some View {
+        VStack(spacing: 10) {
+            HStack(spacing: 10) {
+                stat(text("الدقة", "Resolution"), "\(report.width)×\(report.height)", "rectangle.expand.vertical")
+                stat("FPS", String(format: "%.2f", report.fps), "waveform.path.ecg")
+            }
+            HStack(spacing: 10) {
+                stat(text("الترميز", "Codec"), report.codec.uppercased(), "film.stack")
+                stat(text("البت ريت", "Bitrate"), String(format: "%.1f Mbps", report.bitrateMbps), "gauge.with.dots.needle.67percent")
+            }
+        }
+    }
+
+    private var presetCard: some View {
+        VStack(alignment: isArabic ? .trailing : .leading, spacing: 12) {
+            HStack {
+                Text(text("وضع الجودة", "Quality Mode"))
+                    .font(.headline.bold())
+                Spacer()
+                Image(systemName: "slider.horizontal.3")
+                    .foregroundStyle(.mint)
+            }
+
+            Picker("Preset", selection: $preset) {
+                ForEach(RAFLIPreset.allCases) { item in
+                    Text(displayName(item)).tag(item)
+                }
+            }
+            .pickerStyle(.menu)
+            .tint(.mint)
+
+            Text(presetDescription)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+        .glassCard()
+    }
+
+    private var encodeCard: some View {
+        VStack(spacing: 13) {
+            if busy {
+                ZStack {
+                    Circle().stroke(Color.white.opacity(0.09), lineWidth: 10)
+                    Circle()
+                        .trim(from: 0, to: progress)
+                        .stroke(Color.mint, style: StrokeStyle(lineWidth: 10, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                        .animation(.easeInOut(duration: 0.25), value: progress)
+                    Text("\(Int(progress * 100))%")
+                        .font(.title2.bold().monospacedDigit())
+                }
+                .frame(width: 112, height: 112)
+
+                Text(text("جاري تجهيز الفيديو…", "Preparing your video…"))
+                    .font(.headline)
+            }
+
+            Text(status)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+
+            Button { processVideo() } label: {
+                Label(
+                    busy ? text("جاري المعالجة", "Processing") : text("شغّل RAFLI ULTRA", "Run RAFLI ULTRA"),
+                    systemImage: busy ? "hourglass" : "bolt.fill"
+                )
+            }
+            .buttonStyle(RAFLIPrimaryButton())
+            .disabled(busy)
+        }
+        .glassCard()
+    }
+
+    private func comparisonCard(original: URL, enhanced: URL) -> some View {
+        VStack(alignment: isArabic ? .trailing : .leading, spacing: 12) {
+            HStack {
+                Text(text("قبل / بعد", "Before / After"))
+                    .font(.headline.bold())
+                Spacer()
+                Text(text("النتيجة", "RESULT"))
+                    .font(.caption2.bold())
+                    .foregroundStyle(.mint)
+            }
+
+            HStack(spacing: 10) {
+                videoMiniCard(title: text("الأصلي", "Original"), url: original, accent: .white)
+                videoMiniCard(title: text("بعد التعديل", "Enhanced"), url: enhanced, accent: .mint)
+            }
+        }
+        .glassCard(strong: true)
+    }
+
+    private func videoMiniCard(title: String, url: URL, accent: Color) -> some View {
+        VStack(spacing: 8) {
+            VideoThumbnailView(url: url)
+                .frame(height: 145)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            Text(title)
+                .font(.caption.bold())
+                .foregroundStyle(accent)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func publishCard(url: URL) -> some View {
+        VStack(spacing: 10) {
+            HStack {
+                Text(text("الفيديو جاهز", "Video Ready"))
+                    .font(.headline.bold())
+                Spacer()
+                Image(systemName: "checkmark.seal.fill")
+                    .foregroundStyle(.mint)
+            }
+
+            Button {
+                Task {
+                    do { try await uploader.saveToPhotos(file: url) }
+                    catch { status = error.localizedDescription }
+                }
+            } label: {
+                Label(text("حفظ في الصور", "Save to Photos"), systemImage: "square.and.arrow.down.fill")
+            }
+            .buttonStyle(RAFLIPrimaryButton())
+
+            HStack(spacing: 10) {
+                Button { shareURL = url } label: {
+                    Label(text("مشاركة", "Share"), systemImage: "square.and.arrow.up")
+                }
+                .buttonStyle(RAFLISecondaryButton())
+
+                Button {
+                    sourceURL = nil
+                    outputURL = nil
+                    report = VideoReport()
+                    status = text("اختر فيديو جديد", "Choose a new video")
+                    showPicker = true
+                } label: {
+                    Label(text("فيديو جديد", "New Video"), systemImage: "plus")
+                }
+                .buttonStyle(RAFLISecondaryButton())
+            }
+        }
+        .glassCard()
+    }
+
+    private var videosPage: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: isArabic ? .trailing : .leading, spacing: 16) {
+                pageTitle(text("فيديوهاتي", "My Videos"), subtitle: text("الأصلي والنسخة بعد التعديل", "Original and enhanced versions"))
+
+                if sourceURL == nil && outputURL == nil {
+                    emptyVideos
+                } else {
+                    if let sourceURL {
+                        libraryCard(title: text("الفيديو الأصلي", "Original Video"), badge: text("أصلي", "ORIGINAL"), url: sourceURL, accent: .white)
+                    }
+                    if let outputURL {
+                        libraryCard(title: text("الفيديو بعد التعديل", "Enhanced Video"), badge: text("محسن", "ENHANCED"), url: outputURL, accent: .mint)
+                    }
+                }
+            }
+            .padding(16)
+            .padding(.bottom, 24)
+        }
+    }
+
+    private var emptyVideos: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "film.stack")
+                .font(.system(size: 42, weight: .light))
+                .foregroundStyle(.mint)
+            Text(text("ما عندك فيديوهات بعد", "No videos yet"))
+                .font(.headline)
+            Text(text("اختر فيديو من الرئيسية وستظهر هنا النسخة الأصلية والنسخة الجاهزة.", "Choose a video on Home and both versions will appear here."))
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 42)
+        .glassCard()
+    }
+
+    private func libraryCard(title: String, badge: String, url: URL, accent: Color) -> some View {
+        VStack(alignment: isArabic ? .trailing : .leading, spacing: 11) {
+            VideoThumbnailView(url: url)
+                .frame(height: 220)
+                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            HStack {
+                VStack(alignment: isArabic ? .trailing : .leading, spacing: 3) {
+                    Text(title).font(.headline.bold())
+                    Text(badge).font(.caption2.bold()).foregroundStyle(accent)
+                }
+                Spacer()
+                Button { shareURL = url } label: {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.headline)
+                        .foregroundStyle(.mint)
+                        .frame(width: 42, height: 42)
+                        .background(.ultraThinMaterial)
+                        .clipShape(Circle())
+                }
+            }
+        }
+        .glassCard()
+    }
+
+    private var profilePage: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: 16) {
+                pageTitle(text("الملف الشخصي", "Profile"), subtitle: text("إعدادات بسيطة ومريحة", "Simple, comfortable settings"))
+
+                VStack(spacing: 12) {
+                    ZStack {
+                        Circle().fill(Color.mint.opacity(0.12)).frame(width: 86, height: 86)
+                        Image(systemName: "person.crop.circle.fill")
+                            .font(.system(size: 66))
+                            .foregroundStyle(.white.opacity(0.78))
+                    }
+                    Text("RAFLI USER").font(.headline.bold())
+                    Text("@ucorc").font(.caption).foregroundStyle(.mint)
+                    Text(text("مجاني بالكامل · بدون اشتراك", "100% Free · No subscription"))
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .glassCard(strong: true)
+
+                VStack(alignment: isArabic ? .trailing : .leading, spacing: 12) {
+                    Label(text("اللغة / Language", "Language / اللغة"), systemImage: "globe")
+                        .font(.headline.bold())
+                        .foregroundStyle(.mint)
+
+                    Picker("Language", selection: $language) {
+                        Text("العربية").tag("ar")
+                        Text("English").tag("en")
+                    }
+                    .pickerStyle(.segmented)
+                }
+                .glassCard()
+
+                profileRow(icon: "moon.stars.fill", title: text("المظهر", "Appearance"), value: text("داكن زجاجي", "Dark Glass"))
+                profileRow(icon: "shield.checkered", title: text("الخصوصية", "Privacy"), value: text("المعالجة محليًا", "Local processing"))
+                profileRow(icon: "info.circle.fill", title: text("حول التطبيق", "About"), value: "RAFLI V5")
+
+                VStack(spacing: 5) {
+                    Text(text("ارفعلي", "RAFLI")).font(.title2.black())
+                    Text("Higher Quality. Always.").font(.caption).foregroundStyle(.mint)
+                    Text("100% FREE · @ucorc").font(.caption2).foregroundStyle(.secondary)
+                }
+                .padding(.top, 10)
+            }
+            .padding(16)
+            .padding(.bottom, 24)
+        }
+    }
+
+    private func profileRow(icon: String, title: String, value: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .foregroundStyle(.mint)
+                .frame(width: 34, height: 34)
+                .background(Color.mint.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+            VStack(alignment: isArabic ? .trailing : .leading, spacing: 2) {
+                Text(title).font(.subheadline.bold())
+                Text(value).font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Image(systemName: isArabic ? "chevron.left" : "chevron.right")
+                .font(.caption.bold())
+                .foregroundStyle(.white.opacity(0.25))
+        }
+        .glassCard()
+    }
+
+    private var bottomBar: some View {
+        HStack(spacing: 6) {
+            tabButton(0, icon: "house.fill", title: text("الرئيسية", "Home"))
+            tabButton(1, icon: "rectangle.stack.fill", title: text("فيديوهاتي", "Videos"))
+            tabButton(2, icon: "person.fill", title: text("الملف الشخصي", "Profile"))
+        }
+        .padding(8)
+        .background(.ultraThinMaterial)
+        .overlay(Rectangle().frame(height: 0.5).foregroundStyle(.white.opacity(0.08)), alignment: .top)
+    }
+
+    private func tabButton(_ index: Int, icon: String, title: String) -> some View {
+        Button {
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) { tab = index }
+        } label: {
+            VStack(spacing: 4) {
+                Image(systemName: icon).font(.system(size: 17, weight: .semibold))
+                Text(title).font(.caption2.weight(.semibold)).lineLimit(1)
+            }
+            .foregroundStyle(tab == index ? Color.mint : Color.white.opacity(0.45))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .background(tab == index ? Color.mint.opacity(0.08) : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func chip(_ title: String, icon: String) -> some View {
+        Label(title, systemImage: icon)
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(.white.opacity(0.76))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(.white.opacity(0.05))
+            .clipShape(Capsule())
+    }
+
+    private func stat(_ title: String, _ value: String, _ icon: String) -> some View {
+        VStack(alignment: isArabic ? .trailing : .leading, spacing: 5) {
+            HStack(spacing: 5) {
+                Image(systemName: icon).foregroundStyle(.mint)
+                Text(title).foregroundStyle(.secondary)
+            }
+            .font(.caption2)
+            Text(value).font(.subheadline.bold().monospacedDigit())
+        }
+        .frame(maxWidth: .infinity, alignment: isArabic ? .trailing : .leading)
+        .padding(12)
+        .background(.white.opacity(0.035))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(.white.opacity(0.05)))
+    }
+
+    private func pageTitle(_ title: String, subtitle: String) -> some View {
+        VStack(alignment: isArabic ? .trailing : .leading, spacing: 4) {
+            Text(title).font(.system(size: 30, weight: .black, design: .rounded))
+            Text(subtitle).font(.footnote).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: isArabic ? .trailing : .leading)
+        .padding(.top, 6)
+    }
+
+    private func displayName(_ item: RAFLIPreset) -> String {
+        switch item {
+        case .preserve: return text("الحفاظ على الأصل", "Preserve Original")
+        case .smart: return text("RAFLI ذكي", "RAFLI Smart")
+        case .tiktokSafe: return text("TikTok Safe 1080", "TikTok Safe 1080")
+        case .highMotion: return text("حركة عالية", "High Motion")
+        case .maxQuality: return text("ULTRA MAX", "ULTRA MAX")
+        case .compact: return text("حجم أخف", "Compact")
+        }
+    }
+
+    private var presetDescription: String {
+        switch preset {
+        case .preserve: return text("يحافظ على ملف المصدر بدون إعادة ترميز عندما يكون ذلك ممكنًا.", "Keeps the source without re-encoding when possible.")
+        case .smart: return text("يختار Bitrate قوي حسب ملفك بدون أرقام وهمية.", "Chooses a strong bitrate based on your actual source.")
+        case .tiktokSafe: return text("1080p · H.264 High · 14 Mbps.", "1080p · H.264 High · 14 Mbps.")
+        case .highMotion: return text("مناسب للحركة السريعة مع Bitrate أعلى.", "Higher bitrate for fast motion.")
+        case .maxQuality: return text("أعلى إعداد في RAFLI: 1080p · H.264 High/CABAC · حتى 30 Mbps.", "RAFLI's strongest mode: 1080p · H.264 High/CABAC · up to 30 Mbps.")
+        case .compact: return text("1080p بحجم ملف أخف.", "1080p with a smaller file size.")
+        }
+    }
+
+    private func text(_ ar: String, _ en: String) -> String { isArabic ? ar : en }
+
+    private func loadVideo(_ url: URL) {
+        Task { @MainActor in
+            let access = url.startAccessingSecurityScopedResource()
+            defer { if access { url.stopAccessingSecurityScopedResource() } }
+            do {
+                let folder = try mediaFolder("Originals")
+                let ext = url.pathExtension.isEmpty ? "mp4" : url.pathExtension
+                let local = folder.appendingPathComponent("RAFLI_ORIGINAL_\(Int(Date().timeIntervalSince1970)).\(ext)")
+                try? FileManager.default.removeItem(at: local)
+                try FileManager.default.copyItem(at: url, to: local)
+                sourceURL = local
+                outputURL = nil
+                report = try await VideoAnalyzer.analyze(local)
+                status = text("تم تحليل الفيديو الحقيقي ✅", "Real source analyzed ✅")
+                tab = 0
+            } catch {
+                status = text("تعذر فتح الفيديو: \(error.localizedDescription)", "Could not open video: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func processVideo() {
+        guard let sourceURL else { return }
+        busy = true
+        progress = 0
+        status = text("RAFLI يجهز الفيديو…", "RAFLI is preparing your video…")
+
+        Task {
+            do {
+                let temporary = try await VideoProcessor.export(source: sourceURL, preset: preset, report: report) { value in
+                    Task { @MainActor in progress = value }
+                }
+                let folder = try mediaFolder("Enhanced")
+                let saved = folder.appendingPathComponent("RAFLI_ENHANCED_\(Int(Date().timeIntervalSince1970)).mp4")
+                try? FileManager.default.removeItem(at: saved)
+                try FileManager.default.copyItem(at: temporary, to: saved)
+
+                await MainActor.run {
+                    outputURL = saved
+                    progress = 1
+                    busy = false
+                    status = text("تم تجهيز الفيديو ✅", "Video is ready ✅")
+                }
+            } catch {
+                await MainActor.run {
+                    busy = false
+                    status = text("حدث خطأ: \(error.localizedDescription)", "Error: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
+    private func mediaFolder(_ name: String) throws -> URL {
+        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let root = documents.appendingPathComponent("RAFLI", isDirectory: true)
+        let folder = root.appendingPathComponent(name, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        return folder
+    }
 }
 
-struct RAFLIButton:ButtonStyle{func makeBody(configuration:Configuration)->some View{configuration.label.font(.headline.bold()).frame(maxWidth:.infinity).padding(.vertical,14).background(Color.mint.opacity(configuration.isPressed ? 0.55:0.85)).foregroundStyle(.black).clipShape(RoundedRectangle(cornerRadius:15))}}
-struct RAFLISecondaryButton:ButtonStyle{func makeBody(configuration:Configuration)->some View{configuration.label.font(.subheadline.bold()).frame(maxWidth:.infinity).padding(.vertical,13).background(.white.opacity(configuration.isPressed ? 0.04:0.08)).foregroundStyle(.mint).overlay(RoundedRectangle(cornerRadius:15).stroke(Color.mint.opacity(0.22))).clipShape(RoundedRectangle(cornerRadius:15))}}
-extension View{func rafliCard()->some View{self.padding(16).frame(maxWidth:.infinity).background(.ultraThinMaterial.opacity(0.55)).overlay(RoundedRectangle(cornerRadius:22).stroke(Color.mint.opacity(0.12))).clipShape(RoundedRectangle(cornerRadius:22))}}
-struct ShareSheet:UIViewControllerRepresentable{let items:[Any];func makeUIViewController(context:Context)->UIActivityViewController{UIActivityViewController(activityItems:items,applicationActivities:nil)};func updateUIViewController(_ uiViewController:UIActivityViewController,context:Context){}}
+struct VideoThumbnailView: View {
+    let url: URL
+    @State private var image: UIImage?
+
+    var body: some View {
+        ZStack {
+            Color.white.opacity(0.035)
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                ProgressView().tint(.mint)
+            }
+            Image(systemName: "play.fill")
+                .font(.system(size: 18, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 48, height: 48)
+                .background(.black.opacity(0.52))
+                .clipShape(Circle())
+        }
+        .clipped()
+        .task(id: url) { await generate() }
+    }
+
+    private func generate() async {
+        let asset = AVURLAsset(url: url)
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = CGSize(width: 900, height: 900)
+        do {
+            let cg = try generator.copyCGImage(at: CMTime(seconds: 0.15, preferredTimescale: 600), actualTime: nil)
+            await MainActor.run { image = UIImage(cgImage: cg) }
+        } catch {
+            await MainActor.run { image = nil }
+        }
+    }
+}
+
+struct RAFLIPrimaryButton: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.headline.bold())
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .background(
+                LinearGradient(
+                    colors: [Color.mint.opacity(configuration.isPressed ? 0.65 : 1.0), Color.green.opacity(configuration.isPressed ? 0.35 : 0.78)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .foregroundStyle(.black)
+            .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
+            .shadow(color: Color.mint.opacity(0.22), radius: 14, y: 5)
+            .scaleEffect(configuration.isPressed ? 0.985 : 1)
+    }
+}
+
+struct RAFLISecondaryButton: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.subheadline.bold())
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 13)
+            .foregroundStyle(.mint)
+            .background(.ultraThinMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.mint.opacity(0.16)))
+            .scaleEffect(configuration.isPressed ? 0.985 : 1)
+    }
+}
+
+extension View {
+    func glassCard(strong: Bool = false) -> some View {
+        self
+            .padding(16)
+            .frame(maxWidth: .infinity)
+            .background(strong ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(Color.white.opacity(0.035)))
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .stroke(LinearGradient(colors: [Color.white.opacity(0.15), Color.mint.opacity(0.10), Color.white.opacity(0.03)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
+            )
+            .shadow(color: .black.opacity(0.28), radius: 20, y: 10)
+    }
+}
+
+struct ShareSheet: UIViewControllerRepresentable {
+    let items: [Any]
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+}
+
+extension URL: Identifiable {
+    public var id: String { absoluteString }
+}
