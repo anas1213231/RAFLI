@@ -1,0 +1,36 @@
+name: Build RAFLI V5 Unsigned IPA
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate Xcode project
+        run: xcodegen generate
+      - name: Build unsigned app
+        run: |
+          xcodebuild \
+            -project RAFLI.xcodeproj \
+            -scheme RAFLI \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=""
+      - name: Package unsigned IPA
+        run: |
+          APP=$(find build/Build/Products/Release-iphoneos -maxdepth 1 -name "*.app" | head -1)
+          test -n "$APP"
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+          zip -r RAFLI_V5_PUBLISH_GUARD_UNSIGNED.ipa Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RAFLI-V5-PUBLISH-GUARD-UNSIGNED-IPA
+          path: RAFLI_V5_PUBLISH_GUARD_UNSIGNED.ipa
