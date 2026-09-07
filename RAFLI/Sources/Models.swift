@@ -23,7 +23,7 @@ struct VideoReport {
         else if long >= 1280 && short >= 720 { s += 27 }
         else if long >= 854 { s += 15 }
         if fps >= 59 { s += 25 } else if fps >= 29 { s += 15 }
-        if bitrateMbps >= 14 { s += 10 } else if bitrateMbps >= 8 { s += 7 } else if bitrateMbps >= 4 { s += 4 }
+        if bitrateMbps >= 20 { s += 10 } else if bitrateMbps >= 12 { s += 8 } else if bitrateMbps >= 6 { s += 5 }
         if ["avc1","h264","hvc1","hevc"].contains(codec.lowercased()) { s += 5 }
         return min(100,s)
     }
@@ -42,11 +42,11 @@ enum RAFLIPreset: String, CaseIterable, Identifiable {
     var targetBitrate: Int {
         switch self {
         case .preserve: return 0
-        case .smart: return 18_000_000
-        case .tiktokSafe: return 14_000_000
-        case .highMotion: return 24_000_000
-        case .maxQuality: return 36_000_000
-        case .compact: return 8_000_000
+        case .smart: return 20_000_000
+        case .tiktokSafe: return 16_000_000
+        case .highMotion: return 28_000_000
+        case .maxQuality: return 40_000_000
+        case .compact: return 10_000_000
         }
     }
 
