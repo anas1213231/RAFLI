@@ -20,7 +20,7 @@ jobs:
           mkdir -p RAFLI/Assets.xcassets/RAFLILogo.imageset
           base64 -D -i RAFLI/Assets/RAFLILogo.jpg.b64 -o /tmp/rafli-logo.jpg
           sips -s format png /tmp/rafli-logo.jpg --out /tmp/rafli-logo.png >/dev/null
-          cp /tmp/rafli-logo.png RAFLI/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png
+          sips -z 1024 1024 /tmp/rafli-logo.png --out RAFLI/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png >/dev/null
           cp /tmp/rafli-logo.png RAFLI/Assets.xcassets/RAFLILogo.imageset/RAFLILogo.png
           cat > RAFLI/Assets.xcassets/RAFLILogo.imageset/Contents.json <<'JSON'
           {
