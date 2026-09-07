@@ -1,4 +1,4 @@
-name: Build IRFA3LI Elite Unsigned IPA
+name: Build IRFA3LI Unsigned IPA
 
 on:
   workflow_dispatch:
@@ -19,10 +19,17 @@ jobs:
           mkdir -p RAFLI/Assets.xcassets/AppIcon.appiconset
           mkdir -p RAFLI/Assets.xcassets/RAFLILogo.imageset
           base64 -D -i RAFLI/Assets/RAFLILogo.jpg.b64 -o /tmp/irfa3li-logo.jpg
-          # Keep the supplied ارفعلي artwork exactly as-is. No generated icon and no oversized crop.
+          # Keep the supplied ارفعلي artwork untouched.
           sips -s format png /tmp/irfa3li-logo.jpg --out /tmp/irfa3li-logo.png >/dev/null
+
+          # App icon: use the original artwork directly.
           sips -z 1024 1024 /tmp/irfa3li-logo.png --out RAFLI/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png >/dev/null
-          sips -z 768 768 /tmp/irfa3li-logo.png --out RAFLI/Assets.xcassets/RAFLILogo.imageset/RAFLILogo.png >/dev/null
+
+          # In-app logo: preserve the entire artwork and add only a safe outer margin,
+          # so SwiftUI rounded masks never cut any part of the supplied logo.
+          sips -z 650 650 /tmp/irfa3li-logo.png --out /tmp/irfa3li-logo-safe.png >/dev/null
+          sips -p 768 768 --padColor 031F19 /tmp/irfa3li-logo-safe.png --out RAFLI/Assets.xcassets/RAFLILogo.imageset/RAFLILogo.png >/dev/null
+
           cat > RAFLI/Assets.xcassets/RAFLILogo.imageset/Contents.json <<'JSON'
           {"images":[{"filename":"RAFLILogo.png","idiom":"universal","scale":"1x"}],"info":{"author":"xcode","version":1}}
           JSON
