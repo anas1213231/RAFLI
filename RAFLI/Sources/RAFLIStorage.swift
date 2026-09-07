@@ -15,6 +15,10 @@ final class RAFLIStorage {
         folder.appendingPathComponent("ORIGINAL_\(Int(Date().timeIntervalSince1970))_\(UUID().uuidString.prefix(6)).\(ext)")
     }
 
+    func outputURL(ext: String) -> URL {
+        folder.appendingPathComponent("RAFLI_OUTPUT_\(Int(Date().timeIntervalSince1970))_\(UUID().uuidString.prefix(6)).\(ext)")
+    }
+
     func rememberSource(_ url: URL) { UserDefaults.standard.set(url.path, forKey: "rafli_last_source") }
     func rememberOutput(_ url: URL) { UserDefaults.standard.set(url.path, forKey: "rafli_last_output") }
 
