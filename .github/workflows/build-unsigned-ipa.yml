@@ -18,7 +18,7 @@ jobs:
         run: |
           mkdir -p RAFLI/Assets.xcassets/AppIcon.appiconset
           mkdir -p RAFLI/Assets.xcassets/RAFLILogo.imageset
-          base64 --decode RAFLI/Assets/RAFLILogo.jpg.b64 > /tmp/rafli-logo.jpg
+          base64 -D -i RAFLI/Assets/RAFLILogo.jpg.b64 -o /tmp/rafli-logo.jpg
           sips -s format png /tmp/rafli-logo.jpg --out /tmp/rafli-logo.png >/dev/null
           cp /tmp/rafli-logo.png RAFLI/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png
           cp /tmp/rafli-logo.png RAFLI/Assets.xcassets/RAFLILogo.imageset/RAFLILogo.png
