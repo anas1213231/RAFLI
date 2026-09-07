@@ -14,17 +14,15 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
-      - name: Prepare RAFLI icon assets
+      - name: Prepare exact IRFA3LI brand assets
         run: |
           mkdir -p RAFLI/Assets.xcassets/AppIcon.appiconset
           mkdir -p RAFLI/Assets.xcassets/RAFLILogo.imageset
-          base64 -D -i RAFLI/Assets/RAFLILogo.jpg.b64 -o /tmp/rafli-logo-source.jpg
-          # The supplied artwork contains outer canvas. Crop to the actual square mark first,
-          # then create both the in-app logo and AppIcon from the same clean master.
-          sips -c 1210 1210 --cropOffset 142 163 /tmp/rafli-logo-source.jpg --out /tmp/rafli-logo-crop.jpg >/dev/null
-          sips -s format png /tmp/rafli-logo-crop.jpg --out /tmp/rafli-logo.png >/dev/null
-          sips -z 1024 1024 /tmp/rafli-logo.png --out RAFLI/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png >/dev/null
-          sips -z 768 768 /tmp/rafli-logo.png --out RAFLI/Assets.xcassets/RAFLILogo.imageset/RAFLILogo.png >/dev/null
+          base64 -D -i RAFLI/Assets/RAFLILogo.jpg.b64 -o /tmp/irfa3li-logo.jpg
+          # Keep the supplied ارفعلي artwork exactly as-is. No generated icon and no oversized crop.
+          sips -s format png /tmp/irfa3li-logo.jpg --out /tmp/irfa3li-logo.png >/dev/null
+          sips -z 1024 1024 /tmp/irfa3li-logo.png --out RAFLI/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png >/dev/null
+          sips -z 768 768 /tmp/irfa3li-logo.png --out RAFLI/Assets.xcassets/RAFLILogo.imageset/RAFLILogo.png >/dev/null
           cat > RAFLI/Assets.xcassets/RAFLILogo.imageset/Contents.json <<'JSON'
           {"images":[{"filename":"RAFLILogo.png","idiom":"universal","scale":"1x"}],"info":{"author":"xcode","version":1}}
           JSON
@@ -44,16 +42,16 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY=""
 
-      - name: Package unsigned IPA
+      - name: Package latest ارفعلي IPA
         run: |
           APP=$(find build/Build/Products/Release-iphoneos -maxdepth 1 -name "*.app" | head -1)
           test -n "$APP"
           rm -rf Payload
           mkdir -p Payload
           cp -R "$APP" Payload/
-          zip -r IRFA3LI_ELITE_LATEST_UNSIGNED.ipa Payload
+          zip -r IRFA3LI_LATEST_UNSIGNED.ipa Payload
 
       - uses: actions/upload-artifact@v4
         with:
-          name: IRFA3LI-ELITE-LATEST
-          path: IRFA3LI_ELITE_LATEST_UNSIGNED.ipa
+          name: IRFA3LI-LATEST
+          path: IRFA3LI_LATEST_UNSIGNED.ipa
