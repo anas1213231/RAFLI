@@ -4,7 +4,7 @@ import SwiftUI
 struct RAFLIApp: App {
     var body: some Scene {
         WindowGroup {
-            RAFLIEliteView()
+            IRFA3LIIdentityView()
         }
     }
 }
