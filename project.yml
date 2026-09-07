@@ -14,7 +14,9 @@ targets:
     type: application
     platform: iOS
     sources:
-      - RAFLI/Sources
+      - path: RAFLI/Sources
+        excludes:
+          - ContentView.swift
       - RAFLI/Assets.xcassets
     info:
       path: RAFLI/Info.plist
