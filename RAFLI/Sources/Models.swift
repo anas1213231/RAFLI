@@ -44,11 +44,12 @@ enum RAFLIPreset: String, CaseIterable, Identifiable {
         case .preserve: return 0
         case .smart: return 18_000_000
         case .tiktokSafe: return 14_000_000
-        case .highMotion: return 22_000_000
-        case .maxQuality: return 30_000_000
+        case .highMotion: return 24_000_000
+        case .maxQuality: return 36_000_000
         case .compact: return 8_000_000
         }
     }
+
     var keyframeSeconds: Double {
         switch self {
         case .preserve: return 2
