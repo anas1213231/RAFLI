@@ -14,7 +14,7 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
-      - name: Prepare exact RAFLI logo assets
+      - name: Prepare RAFLI icon assets
         run: |
           mkdir -p RAFLI/Assets.xcassets/AppIcon.appiconset
           mkdir -p RAFLI/Assets.xcassets/RAFLILogo.imageset
@@ -25,30 +25,6 @@ jobs:
           cat > RAFLI/Assets.xcassets/RAFLILogo.imageset/Contents.json <<'JSON'
           {"images":[{"filename":"RAFLILogo.png","idiom":"universal","scale":"1x"}],"info":{"author":"xcode","version":1}}
           JSON
-
-      - name: Apply V1.2 functional UI fixes
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-          p=Path('RAFLI/Sources/ContentView.swift')
-          s=p.read_text()
-          if 'import AVKit' not in s: s=s.replace('import AVFoundation\n','import AVFoundation\nimport AVKit\n')
-          s=s.replace('                Text("Higher Quality. Always.")\n                    .font(.footnote.weight(.medium))\n                    .foregroundStyle(.mint)\n','')
-          s=s.replace('                Text("Higher Quality. Always.").font(.caption2).foregroundStyle(.mint)\n','')
-          s=s.replace('FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".mov")','RAFLIStorage.shared.importURL(ext: "mov")')
-          s=s.replace('FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + "." + ext)','RAFLIStorage.shared.importURL(ext: ext)')
-          s=s.replace('            sourceURL = url\n            outputURL = nil','            sourceURL = url\n            RAFLIStorage.shared.rememberSource(url)\n            outputURL = nil')
-          s=s.replace('                    outputURL = out\n                    busy = false','                    outputURL = out\n                    RAFLIStorage.shared.rememberOutput(out)\n                    busy = false')
-          old='''struct VideoThumbnailView: View {\n    let url: URL\n    @State private var image: UIImage?\n\n    var body: some View {\n        ZStack {\n            Color.black.opacity(0.20)\n            if let image { Image(uiImage: image).resizable().scaledToFill() }\n            else { ProgressView().tint(.mint) }\n            Image(systemName: "play.fill")\n                .foregroundStyle(.white)\n                .padding(10)\n                .background(.black.opacity(0.42))\n                .clipShape(Circle())\n        }\n        .clipped()\n        .task { image = await makeThumbnail() }\n    }\n\n    private func makeThumbnail() async -> UIImage? {\n        let asset = AVURLAsset(url: url)\n        let generator = AVAssetImageGenerator(asset: asset)\n        generator.appliesPreferredTrackTransform = true\n        generator.maximumSize = CGSize(width: 800, height: 800)\n        do {\n            let cg = try generator.copyCGImage(at: CMTime(seconds: 0.2, preferredTimescale: 600), actualTime: nil)\n            return UIImage(cgImage: cg)\n        } catch { return nil }\n    }\n}\n'''
-          new='''struct VideoThumbnailView: View {\n    let url: URL\n    @State private var player: AVPlayer?\n    var body: some View {\n        ZStack {\n            Color.black\n            if let player { VideoPlayer(player: player) }\n            else { ProgressView().tint(.mint) }\n        }\n        .clipped()\n        .onAppear { if player == nil { player = AVPlayer(url: url) } }\n        .onDisappear { player?.pause() }\n    }\n}\n'''
-          if old in s: s=s.replace(old,new)
-          # Restore the last persisted pair after app relaunch.
-          marker='''            status = t("اختر فيديو من الصور أو الملفات", "Choose a video from Photos or Files")\n            withAnimation'''
-          replacement='''            status = t("اختر فيديو من الصور أو الملفات", "Choose a video from Photos or Files")\n            if let saved = RAFLIStorage.shared.restoredSource() {\n                sourceURL = saved\n                Task { try? await analyze(saved) }\n            }\n            if let savedOut = RAFLIStorage.shared.restoredOutput() { outputURL = savedOut }\n            withAnimation'''
-          s=s.replace(marker,replacement)
-          p.write_text(s)
-          PY
 
       - name: Generate Xcode project
         run: xcodegen generate
@@ -72,9 +48,9 @@ jobs:
           rm -rf Payload
           mkdir -p Payload
           cp -R "$APP" Payload/
-          zip -r RAFLI_1_2_UNSIGNED.ipa Payload
+          zip -r RAFLI_1_3_UNSIGNED.ipa Payload
 
       - uses: actions/upload-artifact@v4
         with:
-          name: RAFLI-1.2-UNSIGNED-IPA
-          path: RAFLI_1_2_UNSIGNED.ipa
+          name: RAFLI-1.3-UNSIGNED-IPA
+          path: RAFLI_1_3_UNSIGNED.ipa
