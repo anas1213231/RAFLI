@@ -18,10 +18,13 @@ jobs:
         run: |
           mkdir -p RAFLI/Assets.xcassets/AppIcon.appiconset
           mkdir -p RAFLI/Assets.xcassets/RAFLILogo.imageset
-          base64 -D -i RAFLI/Assets/RAFLILogo.jpg.b64 -o /tmp/rafli-logo.jpg
-          sips -s format png /tmp/rafli-logo.jpg --out /tmp/rafli-logo.png >/dev/null
+          base64 -D -i RAFLI/Assets/RAFLILogo.jpg.b64 -o /tmp/rafli-logo-source.jpg
+          # The supplied artwork contains outer canvas. Crop to the actual square mark first,
+          # then create both the in-app logo and AppIcon from the same clean master.
+          sips -c 1210 1210 --cropOffset 142 163 /tmp/rafli-logo-source.jpg --out /tmp/rafli-logo-crop.jpg >/dev/null
+          sips -s format png /tmp/rafli-logo-crop.jpg --out /tmp/rafli-logo.png >/dev/null
           sips -z 1024 1024 /tmp/rafli-logo.png --out RAFLI/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png >/dev/null
-          cp /tmp/rafli-logo.png RAFLI/Assets.xcassets/RAFLILogo.imageset/RAFLILogo.png
+          sips -z 768 768 /tmp/rafli-logo.png --out RAFLI/Assets.xcassets/RAFLILogo.imageset/RAFLILogo.png >/dev/null
           cat > RAFLI/Assets.xcassets/RAFLILogo.imageset/Contents.json <<'JSON'
           {"images":[{"filename":"RAFLILogo.png","idiom":"universal","scale":"1x"}],"info":{"author":"xcode","version":1}}
           JSON
@@ -48,9 +51,9 @@ jobs:
           rm -rf Payload
           mkdir -p Payload
           cp -R "$APP" Payload/
-          zip -r RAFLI_1_3_UNSIGNED.ipa Payload
+          zip -r RAFLI_X_UNSIGNED.ipa Payload
 
       - uses: actions/upload-artifact@v4
         with:
-          name: RAFLI-1.3-UNSIGNED-IPA
-          path: RAFLI_1_3_UNSIGNED.ipa
+          name: RAFLI-X-UNSIGNED-IPA
+          path: RAFLI_X_UNSIGNED.ipa
