@@ -13,7 +13,9 @@ targets:
   RAFLI:
     type: application
     platform: iOS
-    sources: [RAFLI/Sources]
+    sources:
+      - RAFLI/Sources
+      - RAFLI/Assets.xcassets
     info:
       path: RAFLI/Info.plist
       properties:
@@ -23,6 +25,7 @@ targets:
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true
         NSPhotoLibraryUsageDescription: "RAFLI needs access to choose videos you own and prepare them locally."
+        NSPhotoLibraryAddUsageDescription: "RAFLI needs permission to save your processed videos."
     settings:
       base:
         PRODUCT_NAME: RAFLI
