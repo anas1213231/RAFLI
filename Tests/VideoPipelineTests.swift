@@ -68,7 +68,7 @@ final class VideoPipelineTests: XCTestCase {
             XCTAssertEqual(CVPixelBufferPoolCreatePixelBuffer(nil, adaptor.pixelBufferPool!, &buffer), kCVReturnSuccess)
             let pixel = buffer!
             CVPixelBufferLockBaseAddress(pixel, [])
-            memset(CVPixelBufferGetBaseAddress(pixel), frame * 2 % 255, CVPixelBufferGetDataSize(pixel))
+            memset(CVPixelBufferGetBaseAddress(pixel), Int32(frame * 2 % 255), CVPixelBufferGetDataSize(pixel))
             CVPixelBufferUnlockBaseAddress(pixel, [])
             XCTAssertTrue(adaptor.append(pixel, withPresentationTime: CMTime(value: Int64(frame), timescale: Int32(fps))))
         }

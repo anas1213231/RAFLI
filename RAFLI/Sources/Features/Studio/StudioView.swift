@@ -39,7 +39,8 @@ struct StudioView: View {
         }
     }
     private var empty: some View {
-        GeometryReader { proxy in
+        let photosTitle = settings.text("اختيار من الصور", "Choose from Photos")
+        return GeometryReader { proxy in
             ScrollView {
                 VStack(spacing: 0) {
                     Spacer(minLength: 36)
@@ -53,7 +54,7 @@ struct StudioView: View {
                     Spacer(minLength: 40)
                     VStack(spacing: 12) {
                         PhotosPicker(selection: $photo, matching: .videos, preferredItemEncoding: .current) {
-                            Label(settings.text("اختيار من الصور", "Choose from Photos"), systemImage: "photo.on.rectangle")
+                            Label(photosTitle, systemImage: "photo.on.rectangle")
                         }.buttonStyle(PrimaryButtonStyle()).accessibilityIdentifier("choose-photos").disabled(library.loading || library.failure != nil)
                         Button { files = true } label: {
                             Label(settings.text("اختيار من الملفات", "Choose from Files"), systemImage: "folder")
