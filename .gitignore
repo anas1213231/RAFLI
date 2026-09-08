@@ -1,0 +1,7 @@
+build/
+*.xcodeproj/
+Payload/
+*.ipa
+*.xcresult/
+RAFLI/Assets.xcassets/RAFLILogo.imageset/*.png
+RAFLI/Assets.xcassets/AppIcon.appiconset/*.png

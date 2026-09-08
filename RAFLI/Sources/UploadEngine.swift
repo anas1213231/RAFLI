@@ -2,7 +2,7 @@ import Foundation
 import UIKit
 import Photos
 
-enum RAFLIUploadError: LocalizedError {
+enum RAFLIUploadError: LocalizedError, Equatable {
     case invalidBackend, invalidResponse, notLinked, photosDenied
     case server(String)
     var errorDescription: String? {
@@ -57,7 +57,7 @@ final class RAFLIUploadEngine: ObservableObject {
         defer { try? handle.close(); try? FileManager.default.removeItem(at:bodyURL) }
         func write(_ s:String)throws{try handle.write(contentsOf:Data(s.utf8))}
         try write("--\(boundary)\r\nContent-Disposition: form-data; name=\"link_id\"\r\n\r\n\(linkID)\r\n")
-        try write("--\(boundary)\r\nContent-Disposition: form-data; name=\"video\"; filename=\"RAFLI_ULTRA_READY.mp4\"\r\nContent-Type: video/mp4\r\n\r\n")
+        try write("--\(boundary)\r\nContent-Disposition: form-data; name=\"video\"; filename=\"RAFLI_READY.mp4\"\r\nContent-Type: video/mp4\r\n\r\n")
         let source=try FileHandle(forReadingFrom:file); let total=(try FileManager.default.attributesOfItem(atPath:file.path)[.size] as? NSNumber)?.int64Value ?? 1; var sent:Int64=0
         while true { let chunk=try source.read(upToCount:1024*1024) ?? Data(); if chunk.isEmpty{break}; try handle.write(contentsOf:chunk); sent += Int64(chunk.count); uploadProgress=min(0.45,Double(sent)/Double(max(1,total))*0.45) }
         try source.close(); try write("\r\n--\(boundary)--\r\n"); try handle.synchronize()
@@ -75,7 +75,7 @@ final class RAFLIUploadEngine: ObservableObject {
     }
     func saveToPhotos(file:URL) async throws {
         let r=await PHPhotoLibrary.requestAuthorization(for:.addOnly); guard r == .authorized || r == .limited else {throw RAFLIUploadError.photosDenied}
-        try await PHPhotoLibrary.shared().performChanges { PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL:file) }; status="تم حفظ RAFLI ULTRA READY في الصور ✅"
+        try await PHPhotoLibrary.shared().performChanges { PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL:file) }; status="تم الحفظ في الصور"
     }
     func openTikTok() async { let app=URL(string:"tiktok://")!; if UIApplication.shared.canOpenURL(app){await UIApplication.shared.open(app)} else if let web=URL(string:"https://www.tiktok.com/"){await UIApplication.shared.open(web)} }
     private static func check(_ response:URLResponse,_ data:Data)throws { guard let h=response as? HTTPURLResponse else {throw RAFLIUploadError.invalidResponse}; guard 200..<300 ~= h.statusCode else {throw RAFLIUploadError.server(String(data:data,encoding:.utf8) ?? "HTTP \(h.statusCode)")} }

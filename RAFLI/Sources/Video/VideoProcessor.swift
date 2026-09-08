@@ -18,7 +18,7 @@ final class VideoProcessor {
         session.outputFileType = .mp4
         session.shouldOptimizeForNetworkUse = true
         await session.export()
-        guard session.status == .completed else { throw session.error ?? err(3, "Export failed") }
+        guard session.status == .completed else { try? FileManager.default.removeItem(at: out); throw session.error ?? err(3, "Export failed") }
         return out
     }
 
@@ -28,24 +28,15 @@ final class VideoProcessor {
         let audioTracks = try await asset.loadTracks(withMediaType: .audio)
         let natural = try await vTrack.load(.naturalSize)
         let preferred = try await vTrack.load(.preferredTransform)
-        let transformed = natural.applying(preferred)
+        let transformed = CGRect(origin: .zero, size: natural).applying(preferred).size
         let displayW = max(2.0, abs(transformed.width))
         let displayH = max(2.0, abs(transformed.height))
         let portrait = displayH >= displayW
 
-        let target: (Int, Int) = {
-            if portrait {
-                var w = 1080.0
-                var h = w * (displayH / displayW)
-                if h > 1920 { h = 1920; w = h * (displayW / displayH) }
-                return (even(Int(w.rounded())), even(Int(h.rounded())))
-            } else {
-                var h = 1080.0
-                var w = h * (displayW / displayH)
-                if w > 1920 { w = 1920; h = w * (displayH / displayW) }
-                return (even(Int(w.rounded())), even(Int(h.rounded())))
-            }
-        }()
+        let maxWidth = portrait ? 1080.0 : 1920.0
+        let maxHeight = portrait ? 1920.0 : 1080.0
+        let scale = min(1.0, min(maxWidth / displayW, maxHeight / displayH))
+        let target = (even(Int((displayW * scale).rounded())), even(Int((displayH * scale).rounded())))
         let targetW = target.0
         let targetH = target.1
 
@@ -62,17 +53,27 @@ final class VideoProcessor {
         reader.add(vOut)
 
         var aOut: AVAssetReaderTrackOutput?
+        var audioChannels = 1
         if let aTrack = audioTracks.first {
+            let formats = try await aTrack.load(.formatDescriptions)
+            if let format = formats.first, let description = CMAudioFormatDescriptionGetStreamBasicDescription(format) {
+                audioChannels = min(2, max(1, Int(description.pointee.mChannelsPerFrame)))
+            }
             let output = AVAssetReaderTrackOutput(track: aTrack, outputSettings: [
                 AVFormatIDKey: kAudioFormatLinearPCM,
                 AVLinearPCMIsFloatKey: false,
                 AVLinearPCMBitDepthKey: 16,
-                AVLinearPCMIsNonInterleaved: false
+                AVLinearPCMIsNonInterleaved: false,
+                AVNumberOfChannelsKey: audioChannels,
+                AVSampleRateKey: 48_000
             ])
-            if reader.canAdd(output) { reader.add(output); aOut = output }
+            guard reader.canAdd(output) else { throw err(13, "Audio reader unavailable") }
+            reader.add(output); aOut = output
         }
 
-        let outURL = tempURL("RAFLI_ULTRA_READY.mp4")
+        let outURL = tempURL("RAFLI_READY.mp4")
+        var completed = false
+        defer { if !completed { try? FileManager.default.removeItem(at: outURL) } }
         try? FileManager.default.removeItem(at: outURL)
         let writer = try AVAssetWriter(outputURL: outURL, fileType: .mp4)
         writer.shouldOptimizeForNetworkUse = true
@@ -111,11 +112,12 @@ final class VideoProcessor {
             let input = AVAssetWriterInput(mediaType: .audio, outputSettings: [
                 AVFormatIDKey: kAudioFormatMPEG4AAC,
                 AVSampleRateKey: 48_000,
-                AVNumberOfChannelsKey: 2,
+                AVNumberOfChannelsKey: audioChannels,
                 AVEncoderBitRateKey: 256_000
             ])
             input.expectsMediaDataInRealTime = false
-            if writer.canAdd(input) { writer.add(input); aIn = input }
+            guard writer.canAdd(input) else { throw err(14, "Audio writer unavailable") }
+            writer.add(input); aIn = input
         }
 
         guard reader.startReading(), writer.startWriting() else { throw reader.error ?? writer.error ?? err(7, "Could not start encoding") }
@@ -126,24 +128,31 @@ final class VideoProcessor {
         let targetRect = CGRect(x: 0, y: 0, width: targetW, height: targetH)
         let group = DispatchGroup()
         let stateQ = DispatchQueue(label: "com.ucorc.rafli.state")
-        var failure: Error?
+        let shared = EncodingState()
 
         group.enter()
         vIn.requestMediaDataWhenReady(on: DispatchQueue(label: "com.ucorc.rafli.video", qos: .userInitiated)) {
             while vIn.isReadyForMoreMediaData {
-                if stateQ.sync(execute: { failure != nil }) { vIn.markAsFinished(); group.leave(); return }
+                if stateQ.sync(execute: { shared.failure != nil }) { vIn.markAsFinished(); group.leave(); return }
                 guard let sb = vOut.copyNextSampleBuffer() else { vIn.markAsFinished(); group.leave(); return }
                 guard let src = CMSampleBufferGetImageBuffer(sb) else { continue }
                 let pts = CMSampleBufferGetPresentationTimeStamp(sb)
-                progress(min(0.985, max(0, pts.seconds / duration)))
+                // Drop source frames above 60 using timestamps; never duplicate or retime frames.
+                if sourceFPS > 60.5 {
+                    let bucket = Int((pts.seconds * targetFPS + 0.0001).rounded(.down))
+                    if bucket <= shared.lastBucket { continue }
+                    shared.lastBucket = bucket
+                }
+                let percent = Int(min(98, max(0, pts.seconds / duration * 100)))
+                if percent != shared.lastPercent { shared.lastPercent = percent; progress(Double(percent) / 100) }
                 guard let pool = adaptor.pixelBufferPool else {
-                    stateQ.sync { failure = err(8, "Pixel buffer pool unavailable") }
+                    stateQ.sync { shared.failure = err(8, "Pixel buffer pool unavailable") }
                     reader.cancelReading(); vIn.markAsFinished(); group.leave(); return
                 }
                 var dst: CVPixelBuffer?
                 CVPixelBufferPoolCreatePixelBuffer(nil, pool, &dst)
                 guard let dst else {
-                    stateQ.sync { failure = err(9, "Could not allocate output frame") }
+                    stateQ.sync { shared.failure = err(9, "Could not allocate output frame") }
                     reader.cancelReading(); vIn.markAsFinished(); group.leave(); return
                 }
 
@@ -162,7 +171,7 @@ final class VideoProcessor {
                 ci.render(image, to: dst, bounds: targetRect, colorSpace: CGColorSpaceCreateDeviceRGB())
 
                 if !adaptor.append(dst, withPresentationTime: pts) {
-                    stateQ.sync { failure = writer.error ?? err(10, "Video append failed") }
+                    stateQ.sync { shared.failure = writer.error ?? err(10, "Video append failed") }
                     reader.cancelReading(); vIn.markAsFinished(); group.leave(); return
                 }
             }
@@ -172,30 +181,43 @@ final class VideoProcessor {
             group.enter()
             aIn.requestMediaDataWhenReady(on: DispatchQueue(label: "com.ucorc.rafli.audio", qos: .userInitiated)) {
                 while aIn.isReadyForMoreMediaData {
-                    if stateQ.sync(execute: { failure != nil }) { aIn.markAsFinished(); group.leave(); return }
+                    if stateQ.sync(execute: { shared.failure != nil }) { aIn.markAsFinished(); group.leave(); return }
                     guard let sb = aOut.copyNextSampleBuffer() else { aIn.markAsFinished(); group.leave(); return }
                     if !aIn.append(sb) {
-                        stateQ.sync { failure = writer.error ?? err(11, "Audio append failed") }
+                        stateQ.sync { shared.failure = writer.error ?? err(11, "Audio append failed") }
                         reader.cancelReading(); aIn.markAsFinished(); group.leave(); return
                     }
                 }
             }
         }
 
-        return try await withCheckedThrowingContinuation { cont in
+        let result: URL = try await withCheckedThrowingContinuation { cont in
             group.notify(queue: .global(qos: .userInitiated)) {
-                if let f = stateQ.sync(execute: { failure }) {
-                    writer.cancelWriting(); cont.resume(throwing: f); return
+                if let f = stateQ.sync(execute: { shared.failure }) {
+                    writer.cancelWriting(); try? FileManager.default.removeItem(at: outURL); cont.resume(throwing: f); return
+                }
+                guard reader.status == .completed else {
+                    writer.cancelWriting(); try? FileManager.default.removeItem(at: outURL)
+                    cont.resume(throwing: reader.error ?? err(15, "Reader did not complete")); return
                 }
                 writer.finishWriting {
                     if writer.status == .completed { progress(1); cont.resume(returning: outURL) }
-                    else { cont.resume(throwing: writer.error ?? err(12, "Writer failed")) }
+                    else { try? FileManager.default.removeItem(at: outURL); cont.resume(throwing: writer.error ?? err(12, "Writer failed")) }
                 }
             }
         }
+        completed = true
+        return result
     }
 
     private static func even(_ value: Int) -> Int { max(2, value - (value % 2)) }
     private static func err(_ code: Int, _ text: String) -> NSError { NSError(domain: "RAFLI", code: code, userInfo: [NSLocalizedDescriptionKey: text]) }
     private static func tempURL(_ name: String) -> URL { FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + "_" + name) }
+}
+
+// failure is protected by stateQ; cadence/progress fields are confined to the video queue.
+private final class EncodingState: @unchecked Sendable {
+    var failure: Error?
+    var lastBucket = -1
+    var lastPercent = -1
 }

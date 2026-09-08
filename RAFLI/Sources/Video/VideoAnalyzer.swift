@@ -11,10 +11,12 @@ final class VideoAnalyzer {
 
         let size = try await track.load(.naturalSize)
         let transform = try await track.load(.preferredTransform)
-        let transformed = size.applying(transform)
+        let transformed = CGRect(origin: .zero, size: size).applying(transform).size
         let w = Int(abs(transformed.width.rounded()))
         let h = Int(abs(transformed.height.rounded()))
+        guard duration.isFinite, duration > 0, w > 0, h > 0 else { throw AppFailure.unsupported }
         let fps = Double(try await track.load(.nominalFrameRate))
+        guard fps.isFinite, fps > 0 else { throw AppFailure.unsupported }
         let bitrate = Double(try await track.load(.estimatedDataRate)) / 1_000_000.0
 
         let descs = try await track.load(.formatDescriptions)
