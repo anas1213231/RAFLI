@@ -3,8 +3,10 @@ options:
   bundleIdPrefix: com.ucorc
 settings:
   base:
-    IPHONEOS_DEPLOYMENT_TARGET: 16.0
-    SWIFT_VERSION: 5.9
+    IPHONEOS_DEPLOYMENT_TARGET: 17.0
+    SWIFT_VERSION: 5.0
+    MARKETING_VERSION: 3.0.0
+    CURRENT_PROJECT_VERSION: 1
     TARGETED_DEVICE_FAMILY: 1
     CODE_SIGN_STYLE: Automatic
     PRODUCT_BUNDLE_IDENTIFIER: com.ucorc.rafli.power
@@ -15,14 +17,15 @@ targets:
     platform: iOS
     sources:
       - path: RAFLI/Sources
-        excludes:
-          - ContentView.swift
       - RAFLI/Assets.xcassets
     info:
       path: RAFLI/Info.plist
       properties:
-        CFBundleDisplayName: RAFLI
+        CFBundleDisplayName: ارفعلي
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         UILaunchScreen: {}
+        UIRequiresFullScreen: true
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true
@@ -32,3 +35,29 @@ targets:
       base:
         PRODUCT_NAME: RAFLI
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+
+  RAFLITests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [Tests]
+    dependencies:
+      - target: RAFLI
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+  RAFLIUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [UITests]
+    dependencies:
+      - target: RAFLI
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  RAFLI:
+    build:
+      targets:
+        RAFLI: all
+    test:
+      targets: [RAFLITests, RAFLIUITests]

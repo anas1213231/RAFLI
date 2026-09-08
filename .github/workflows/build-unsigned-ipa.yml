@@ -1,9 +1,9 @@
-name: Build IRFA3LI Unsigned IPA
+name: Build and verify RAFLI
 
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, 'rebuild/**']
 
 jobs:
   build:
@@ -18,17 +18,11 @@ jobs:
         run: |
           mkdir -p RAFLI/Assets.xcassets/AppIcon.appiconset
           mkdir -p RAFLI/Assets.xcassets/RAFLILogo.imageset
-          base64 -D -i RAFLI/Assets/RAFLILogo.jpg.b64 -o /tmp/irfa3li-logo.jpg
-          # Keep the supplied ارفعلي artwork untouched.
-          sips -s format png /tmp/irfa3li-logo.jpg --out /tmp/irfa3li-logo.png >/dev/null
-
-          # App icon: use the original artwork directly.
-          sips -z 1024 1024 /tmp/irfa3li-logo.png --out RAFLI/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png >/dev/null
-
-          # In-app logo: preserve the entire artwork and add only a safe outer margin,
-          # so SwiftUI rounded masks never cut any part of the supplied logo.
-          sips -z 650 650 /tmp/irfa3li-logo.png --out /tmp/irfa3li-logo-safe.png >/dev/null
-          sips -p 768 768 --padColor 031F19 /tmp/irfa3li-logo-safe.png --out RAFLI/Assets.xcassets/RAFLILogo.imageset/RAFLILogo.png >/dev/null
+          # Preserve the exact uploaded artwork, including its original white margin.
+          # Only format conversion and proportional resolution changes are performed.
+          sips -s format png RAFLI/Assets/RAFLILogo.original.jpeg --out /tmp/rafli-logo.png >/dev/null
+          sips -z 1024 1024 /tmp/rafli-logo.png --out RAFLI/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png >/dev/null
+          sips -z 768 768 /tmp/rafli-logo.png --out RAFLI/Assets.xcassets/RAFLILogo.imageset/RAFLILogo.png >/dev/null
 
           cat > RAFLI/Assets.xcassets/RAFLILogo.imageset/Contents.json <<'JSON'
           {"images":[{"filename":"RAFLILogo.png","idiom":"universal","scale":"1x"}],"info":{"author":"xcode","version":1}}
@@ -45,6 +39,7 @@ jobs:
             -configuration Release \
             -sdk iphoneos \
             -derivedDataPath build \
+            CURRENT_PROJECT_VERSION=${{ github.run_number }} \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY=""
@@ -56,9 +51,29 @@ jobs:
           rm -rf Payload
           mkdir -p Payload
           cp -R "$APP" Payload/
-          zip -r IRFA3LI_LATEST_UNSIGNED.ipa Payload
+          zip -r RAFLI_3.0_${{ github.run_number }}_UNSIGNED.ipa Payload
 
       - uses: actions/upload-artifact@v4
         with:
-          name: IRFA3LI-LATEST
-          path: IRFA3LI_LATEST_UNSIGNED.ipa
+          name: RAFLI-3.0-${{ github.run_number }}-UNSIGNED
+          path: RAFLI_3.0_${{ github.run_number }}_UNSIGNED.ipa
+
+      - name: Test real video pipeline and navigation
+        run: |
+          DEVICE=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for k,v in d["devices"].items() if "iOS" in k for x in v if "iPhone" in x["name"]))')
+          xcodebuild test -project RAFLI.xcodeproj -scheme RAFLI -configuration Debug -destination "platform=iOS Simulator,id=$DEVICE" -resultBundlePath TestResults.xcresult CODE_SIGNING_ALLOWED=NO
+
+      - name: Export test screenshots
+        if: always()
+        run: |
+          if [ -d TestResults.xcresult ]; then
+            xcrun xcresulttool export attachments --path TestResults.xcresult --output-path screenshots || true
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: RAFLI-Verification-${{ github.run_number }}
+          path: |
+            TestResults.xcresult
+            screenshots
