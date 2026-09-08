@@ -22,6 +22,7 @@ struct AccessView: View {
                 VStack(spacing: 16) {
                     SecureField(settings.text("رمز الدخول", "Access code"), text: $code)
                         .textInputAutocapitalization(.never).autocorrectionDisabled().submitLabel(.go)
+                        .keyboardType(.asciiCapable).environment(\.layoutDirection, .leftToRight)
                         .padding(16).background(Palette.surface, in: RoundedRectangle(cornerRadius: 12))
                         .focused($focused).onSubmit(enter).accessibilityIdentifier("access-code")
                     if invalid { Text(settings.text("رمز الدخول غير صحيح.", "The access code is incorrect.")).font(.caption).foregroundStyle(.red).accessibilityIdentifier("access-error") }
@@ -32,7 +33,7 @@ struct AccessView: View {
         }.pageBackground()
     }
     private func enter() {
-        guard code == "1v" else { invalid = true; settings.feedback(.error); return }
+        guard code == "1v" else { invalid = true; code = ""; focused = true; settings.feedback(.error); return }
         focused = false; code = ""; settings.feedback(); unlock()
     }
 }

@@ -32,7 +32,18 @@ struct AppRootView: View {
                     ProfileView().tabItem { Label(settings.text("حسابي", "Profile"), systemImage: "person.crop.circle") }.tag(2)
                     SettingsView().tabItem { Label(settings.text("الإعدادات", "Settings"), systemImage: "gearshape") }.tag(3)
                 }.onChange(of: tab) { _, _ in settings.feedback() }
-                    .task { await library.refresh() }
+                    .task {
+                        await library.refresh()
+                        #if DEBUG
+                        if ProcessInfo.processInfo.arguments.contains("--ui-video-fixture") {
+                            do {
+                                let file = try await DebugVideoFixture.make()
+                                await studio.importFile(file, settings: settings, library: library)
+                                try? FileManager.default.removeItem(at: file)
+                            } catch { studio.failure = .importFailed }
+                        }
+                        #endif
+                    }
             } else { AccessView { unlocked = true } }
         }
         .animation(reduceMotion || settings.reducedMotion ? nil : .easeOut(duration: 0.22), value: unlocked)

@@ -19,7 +19,7 @@ struct SettingsView: View {
                         Text(settings.text("فاتح", "Light")).tag(Appearance.light)
                         Text(settings.text("داكن", "Dark")).tag(Appearance.dark)
                         Text(settings.text("أسود OLED", "OLED Black")).tag(Appearance.oled)
-                    }
+                    }.accessibilityIdentifier("appearance-setting")
                     Toggle(settings.text("الاهتزازات", "Haptics"), isOn: $settings.haptics)
                     Picker(settings.text("الحركة", "Motion"), selection: $settings.reducedMotion) {
                         Text(settings.text("كاملة", "Full")).tag(false)
